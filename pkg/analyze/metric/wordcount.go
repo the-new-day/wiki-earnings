@@ -2,17 +2,17 @@ package metric
 
 type WordCount struct {
 	baseMetric
-	wordCap int
+	cap int
 }
 
-func NewWordCount(weight int, wordCap int) *WordCount {
+func NewWordCount(weight int, cap int) *WordCount {
 	return &WordCount{
 		baseMetric: baseMetric{weight},
-		wordCap:    wordCap,
+		cap:        cap,
 	}
 }
 
 func (p *WordCount) Apply(state ArticleState) float64 {
 	wordCount := len(state.Words)
-	return satInt(wordCount, p.wordCap)
+	return satInt(wordCount, p.cap)
 }

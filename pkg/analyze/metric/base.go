@@ -1,11 +1,13 @@
 package metric
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 type Section struct {
-	Level    int
-	TocLevel int
-	Line     string
+	Level int
+	Line  string
 }
 
 type ArticleState struct {
@@ -14,6 +16,7 @@ type ArticleState struct {
 	Links      []string
 	Images     []string
 	Sections   []Section
+	Templates  []string
 }
 
 type baseMetric struct {
@@ -45,4 +48,9 @@ func satInt(x, cap int) float64 {
 		panic(fmt.Sprintf("satInt(%d, %d): cap is <= 0", x, cap))
 	}
 	return max(0, min(float64(x)/float64(cap), 1.0))
+}
+
+// inNhood checks if x is in the neighborhood of base, i.e. is in range [base-eps; base+eps].
+func inNhood(x, base, eps int) bool {
+	return math.Abs(float64(x-base)) <= float64(eps)
 }

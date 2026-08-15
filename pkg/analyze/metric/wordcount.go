@@ -1,5 +1,7 @@
 package metric
 
+import "github.com/the-new-day/protanki-wiki-admin/internal/articleinfo"
+
 type WordCount struct {
 	baseMetric
 	cap int
@@ -12,7 +14,7 @@ func NewWordCount(weight int, cap int) *WordCount {
 	}
 }
 
-func (p *WordCount) Apply(state ArticleState) float64 {
-	wordCount := len(state.Words)
+func (p *WordCount) Apply(info articleinfo.Info) float64 {
+	wordCount := len(info.Words)
 	return satInt(wordCount, p.cap)
 }

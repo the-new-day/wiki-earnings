@@ -5,20 +5,6 @@ import (
 	"math"
 )
 
-type Section struct {
-	Level int
-	Line  string
-}
-
-type ArticleState struct {
-	Words      []string
-	Categories []string
-	Links      []string
-	Images     []string
-	Sections   []Section
-	Templates  []string
-}
-
 type baseMetric struct {
 	weight int
 }

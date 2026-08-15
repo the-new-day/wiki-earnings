@@ -1,5 +1,7 @@
 package metric
 
+import "github.com/the-new-day/protanki-wiki-admin/internal/articleinfo"
+
 type ImageDensity struct {
 	baseMetric
 	densityCap float64
@@ -12,8 +14,8 @@ func NewImageDensity(weight int, densityCap float64) *ImageDensity {
 	}
 }
 
-func (d *ImageDensity) Apply(state ArticleState) float64 {
-	wordCount := len(state.Words)
-	imageCount := len(state.Images)
+func (d *ImageDensity) Apply(info articleinfo.Info) float64 {
+	wordCount := len(info.Words)
+	imageCount := len(info.Images)
 	return sat(density(imageCount, wordCount), d.densityCap)
 }

@@ -1,5 +1,7 @@
 package metric
 
+import "github.com/the-new-day/protanki-wiki-admin/internal/articleinfo"
+
 type ArticleStructure struct {
 	baseMetric
 	sectionCountCap int
@@ -12,16 +14,16 @@ func NewArticleStructure(weight int, sectionCountCap int) *ArticleStructure {
 	}
 }
 
-func (p *ArticleStructure) Apply(state ArticleState) float64 {
-	if !isSectionStructureValid(state.Sections) {
+func (p *ArticleStructure) Apply(info articleinfo.Info) float64 {
+	if !isSectionStructureValid(info.Sections) {
 		return 0
 	}
 
-	sectionCount := len(state.Sections)
+	sectionCount := len(info.Sections)
 	return satInt(sectionCount, p.sectionCountCap)
 }
 
-func isSectionStructureValid(sections []Section) bool {
+func isSectionStructureValid(sections []articleinfo.Section) bool {
 	if len(sections) == 0 || sections[0].Level > 2 {
 		return false
 	}

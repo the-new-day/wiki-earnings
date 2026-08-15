@@ -1,5 +1,7 @@
 package metric
 
+import "github.com/the-new-day/protanki-wiki-admin/internal/articleinfo"
+
 type CategoryCount struct {
 	baseMetric
 	cap int
@@ -12,7 +14,7 @@ func NewCategoryCount(weight int, cap int) *CategoryCount {
 	}
 }
 
-func (p *CategoryCount) Apply(state ArticleState) float64 {
-	count := len(state.Categories)
+func (p *CategoryCount) Apply(info articleinfo.Info) float64 {
+	count := len(info.Categories)
 	return satInt(count, p.cap)
 }

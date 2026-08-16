@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/articleinfo"
-	"github.com/the-new-day/protanki-wiki-admin/pkg/analyze"
-	"github.com/the-new-day/protanki-wiki-admin/pkg/analyze/metric"
+	"github.com/the-new-day/protanki-wiki-admin/internal/analyze"
+	"github.com/the-new-day/protanki-wiki-admin/internal/analyze/metric"
+	"github.com/the-new-day/protanki-wiki-admin/internal/parse"
 )
 
 func main() {
@@ -25,19 +25,22 @@ func main() {
 		templateUsage,
 	}
 
-	title := "Ежедневные_подарки"
-	locale := "ru"
+	// title := "Ежедневные подарки"
+	// locale := "ru"
 
-	info, err := articleinfo.FetchInfo(title, locale)
-	cost, err := analyze.GetCost(info, metrics...)
+	// info, err := parse.FetchInfo(title, locale)
+	// cost, err := info.GetCost(metrics...)
 
+	// fmt.Println(cost)
+
+	// scores := info.GetMetricScores(metrics...)
+	// fmt.Println(scores)
+	// fmt.Println(info.GetQuality(metrics...))
+
+	edit, err := parse.FetchLastEdit("Участник:New.Day", "ru")
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println(cost)
-
-	scores := analyze.GetMetricScores(info, metrics...)
-	fmt.Println(scores)
-	fmt.Println(analyze.GetQuality(info, metrics...))
+	fmt.Println(edit.GetCost(metrics...))
 }

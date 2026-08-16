@@ -1,35 +1,58 @@
-package articleinfo
+package parse
 
 import (
 	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
+
+	"github.com/the-new-day/protanki-wiki-admin/internal/analyze"
+	"golang.org/x/net/html"
 )
 
 const wikiUrl = "https://wiki.pro-tanki.online/"
-const queryString = "/api.php?action=parse&prop=text|tocdata|links|templates|images|categories|externallinks&formatversion=2&format=json&page="
 
-func FetchInfo(page string, locale string) (Info, error) {
-	url := wikiUrl + locale + queryString + url.QueryEscape(page)
+const parseActionQueryString = "/api.php?action=parse&prop=revid|text|tocdata|links|templates|images|categories|externallinks&formatversion=2&format=json"
 
-	resp, err := http.Get(url)
+func FetchInfo(page string, locale string) (analyze.Info, error) {
+	url := wikiUrl + locale + parseActionQueryString + "&page=" + url.QueryEscape(page)
+	return fetchInfoByUrl(url)
+}
+
+func FetchInfoById(oldId int, locale string) (analyze.Info, error) {
+	url := wikiUrl + locale + parseActionQueryString + "&oldid=" + strconv.Itoa(oldId)
+	return fetchInfoByUrl(url)
+}
+
+func fetchInfoByUrl(url string) (analyze.Info, error) {
+	body, err := fetch(url)
 	if err != nil {
-		return Info{}, err
+		return analyze.Info{}, err
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return Info{}, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return Info{}, fmt.Errorf("status: %d, body: %s", resp.StatusCode, string(body))
-	}
-
 	return parseInfo(body)
+}
+
+func ExtractWords(htmlContent string) ([]string, error) {
+	doc, err := html.Parse(strings.NewReader(htmlContent))
+	if err != nil {
+		return nil, err
+	}
+
+	var buf strings.Builder
+	extractText(doc, &buf)
+
+	text := strings.TrimSpace(buf.String())
+	return strings.Fields(text), nil
+}
+
+func extractText(n *html.Node, buf *strings.Builder) {
+	if n.Type == html.TextNode {
+		buf.WriteString(n.Data)
+	}
+
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		extractText(c, buf)
+	}
 }
 
 type category struct {
@@ -53,8 +76,9 @@ type tocData struct {
 	Sections []tocSection `json:"sections"`
 }
 
-type response struct {
+type parseResponse struct {
 	Parse struct {
+		RevId      int        `json:"revid"`
 		Title      string     `json:"title"`
 		Text       string     `json:"text"`
 		Categories []category `json:"categories"`
@@ -62,21 +86,21 @@ type response struct {
 		Templates  []template `json:"templates"`
 		Images     []string   `json:"images"`
 		TocData    tocData    `json:"tocdata"`
-	}
+	} `json:"parse"`
 }
 
-func parseInfo(jsonResponse []byte) (Info, error) {
-	var parseResp response
+func parseInfo(jsonResponse []byte) (analyze.Info, error) {
+	var parseResp parseResponse
 
 	if err := json.Unmarshal(jsonResponse, &parseResp); err != nil {
-		return Info{}, err
+		return analyze.Info{}, err
 	}
 
 	resp := parseResp.Parse
 
 	words, err := ExtractWords(resp.Text)
 	if err != nil {
-		return Info{}, err
+		return analyze.Info{}, err
 	}
 
 	categories := make([]string, len(resp.Categories))
@@ -94,13 +118,14 @@ func parseInfo(jsonResponse []byte) (Info, error) {
 		templates[i] = template.Title
 	}
 
-	sections := make([]Section, len(resp.TocData.Sections))
+	sections := make([]analyze.Section, len(resp.TocData.Sections))
 	for i, section := range resp.TocData.Sections {
 		sections[i].Level = section.Level
 		sections[i].Line = section.Line
 	}
 
-	return Info{
+	return analyze.Info{
+		RevId:      resp.RevId,
 		Title:      resp.Title,
 		Words:      words,
 		Categories: categories,

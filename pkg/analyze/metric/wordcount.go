@@ -1,10 +1,19 @@
 package metric
 
-import "github.com/the-new-day/protanki-wiki-admin/internal/articleinfo"
+import (
+	"math"
+
+	"github.com/the-new-day/protanki-wiki-admin/internal/articleinfo"
+	"github.com/the-new-day/protanki-wiki-admin/pkg/analyze"
+)
 
 type WordCount struct {
 	baseMetric
 	cap int
+}
+
+func logistic(x float64) float64 {
+	return 1.0 / (1.0 + math.Exp(-analyze.WordCountSteepness*(x-analyze.WordCountMidpoint)))
 }
 
 func NewWordCount(weight int, cap int) *WordCount {
@@ -16,5 +25,9 @@ func NewWordCount(weight int, cap int) *WordCount {
 
 func (p *WordCount) Apply(info articleinfo.Info) float64 {
 	wordCount := len(info.Words)
-	return satInt(wordCount, p.cap)
+
+	lo := logistic(analyze.WordCountTreshold)
+	hi := logistic(analyze.WordCountCap)
+	f := (logistic(float64(wordCount)) - lo) / (hi - lo)
+	return math.Max(0, math.Min(1, f))
 }

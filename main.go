@@ -4,27 +4,40 @@ import (
 	"fmt"
 
 	"github.com/the-new-day/protanki-wiki-admin/internal/articleinfo"
+	"github.com/the-new-day/protanki-wiki-admin/pkg/analyze"
+	"github.com/the-new-day/protanki-wiki-admin/pkg/analyze/metric"
 )
 
 func main() {
-	// wordCount := metric.NewWordCount(analyze.WordCountWeight, analyze.WordCountCap)
-	// linkDensity := metric.NewLinkDensity(analyze.LinkDensityWeight, analyze.LinkDensityCap)
-	// imageDensity := metric.NewImageDensity(analyze.ImageDensityWeight, analyze.ImageDensityCap)
-	// categoryCount := metric.NewCategoryCount(analyze.CategoryCountWeight, analyze.CategoryCountCap)
+	wordCount := metric.NewWordCount(analyze.WordCountWeight, analyze.WordCountCap)
+	linkDensity := metric.NewLinkDensity(analyze.LinkDensityWeight, analyze.LinkDensityCap)
+	imageDensity := metric.NewImageDensity(analyze.ImageDensityWeight, analyze.ImageDensityCap)
+	categoryCount := metric.NewCategoryCount(analyze.CategoryCountWeight, analyze.CategoryCountCap)
+	articleStructure := metric.NewArticleStructure(analyze.ArticleStructureWeight, analyze.ArticleStructureSectionCountCap)
+	templateUsage := metric.NewTemplateUsage(analyze.TemplateUsageWeight, analyze.TemplateUsageCap)
 
-	// state := metric.articleinfo.Info{
-	// 	Words:      []string{"hello", "world"},
-	// 	Links:      []string{"Новобранец"},
-	// 	Images:     []string{"1.jpg"},
-	// 	Categories: []string{"FAQ", "FAQ", "FAQ", "FAQ", "FAQ", "FAQ", "FAQ", "FAQ", "FAQ", "FAQ", "FAQ"},
-	// }
+	metrics := []analyze.Metric{
+		wordCount,
+		linkDensity,
+		imageDensity,
+		categoryCount,
+		articleStructure,
+		templateUsage,
+	}
 
-	// fmt.Println(analyze.GetScore(state, wordCount, linkDensity, imageDensity, categoryCount))
+	title := "Ежедневные_подарки"
+	locale := "ru"
 
-	info, err := articleinfo.FetchInfo("Праздничные_акции_и_скидки", "ru")
+	info, err := articleinfo.FetchInfo(title, locale)
+	cost, err := analyze.GetCost(info, metrics...)
+
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println(info.Words)
+	fmt.Println(cost)
+
+	scores := analyze.GetMetricScores(info, metrics...)
+	fmt.Println(scores)
+	fmt.Println(analyze.GetQuality(info, metrics...))
 }

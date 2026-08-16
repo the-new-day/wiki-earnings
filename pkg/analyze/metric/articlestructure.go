@@ -28,13 +28,17 @@ func isSectionStructureValid(sections []articleinfo.Section) bool {
 		return false
 	}
 
-	currentLevel := 1
-	for _, section := range sections {
-		if !inNhood(section.Level, currentLevel, 1) {
-			return false
+	for i := 1; i < len(sections); i++ {
+		prevLevel := sections[i-1].Level
+		currLevel := sections[i].Level
+
+		if currLevel < prevLevel {
+			continue
 		}
 
-		currentLevel = section.Level
+		if currLevel > prevLevel+1 {
+			return false
+		}
 	}
 
 	return true

@@ -2,7 +2,6 @@ package metric
 
 import (
 	"github.com/the-new-day/protanki-wiki-admin/internal/analyze"
-	"github.com/the-new-day/protanki-wiki-admin/internal/utils"
 )
 
 type LinkDensity struct {
@@ -24,5 +23,5 @@ func (d *LinkDensity) Apply(info *analyze.Info) float64 {
 	}
 
 	linkCount := len(info.Links)
-	return utils.Sat(utils.Density(linkCount, wordCount), d.densityCap)
+	return analyze.Sat(analyze.Density(linkCount, wordCount), d.densityCap)
 }

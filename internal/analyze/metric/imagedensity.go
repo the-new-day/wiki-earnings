@@ -2,7 +2,6 @@ package metric
 
 import (
 	"github.com/the-new-day/protanki-wiki-admin/internal/analyze"
-	"github.com/the-new-day/protanki-wiki-admin/internal/utils"
 )
 
 type ImageDensity struct {
@@ -23,5 +22,5 @@ func (d *ImageDensity) Apply(info *analyze.Info) float64 {
 		return 0
 	}
 	imageCount := len(info.Images)
-	return utils.Sat(utils.Density(imageCount, wordCount), d.densityCap)
+	return analyze.Sat(analyze.Density(imageCount, wordCount), d.densityCap)
 }

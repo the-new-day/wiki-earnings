@@ -2,7 +2,6 @@ package metric
 
 import (
 	"github.com/the-new-day/protanki-wiki-admin/internal/analyze"
-	"github.com/the-new-day/protanki-wiki-admin/internal/utils"
 )
 
 type TemplateUsage struct {
@@ -18,5 +17,5 @@ func NewTemplateUsage(weight int, cap int) *TemplateUsage {
 }
 
 func (d *TemplateUsage) Apply(info *analyze.Info) float64 {
-	return utils.SatInt(len(info.Templates), d.cap)
+	return analyze.SatInt(len(info.Templates), d.cap)
 }

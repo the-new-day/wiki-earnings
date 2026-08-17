@@ -1,10 +1,8 @@
-package utils
+package analyze
 
 import (
 	"fmt"
 	"math"
-
-	"github.com/the-new-day/protanki-wiki-admin/internal/analyze"
 )
 
 // Density returns density of items compared to insideOf in percent.
@@ -31,5 +29,5 @@ func SatInt(x, cap int) float64 {
 }
 
 func Logistic(x float64) float64 {
-	return 1.0 / (1.0 + math.Exp(-analyze.WordCountSteepness*(x-analyze.WordCountMidpoint)))
+	return 1.0 / (1.0 + math.Exp(-WordCountSteepness*(x-WordCountMidpoint)))
 }

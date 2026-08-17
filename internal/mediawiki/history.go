@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/the-new-day/protanki-wiki-admin/internal/analyze"
-	"github.com/the-new-day/protanki-wiki-admin/internal/utils"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -25,10 +25,12 @@ type Edit struct {
 	User      string
 	UserID    int64
 	Timestamp time.Time
+	PageID    int64
+	PageTitle string
 }
 
-func FetchEdit(ctx context.Context, page string, revID int64, locale string) (Edit, error) {
-	reqUrl := wikiUrl + locale + getHistoryQueryString + "&rvstartid=" + strconv.FormatInt(revID, 10) + "&titles=" + url.QueryEscape(page)
+func FetchEdit(ctx context.Context, title string, revID int64, locale string) (Edit, error) {
+	reqUrl := wikiUrl + locale + getHistoryQueryString + "&rvstartid=" + strconv.FormatInt(revID, 10) + "&titles=" + url.QueryEscape(title)
 
 	body, err := fetch(ctx, reqUrl)
 	if err != nil {
@@ -69,11 +71,15 @@ func parseEdit(ctx context.Context, jsonResponse []byte, revID int64, locale str
 
 	if len(historyResp.Query.Pages) == 0 {
 		return Edit{}, fmt.Errorf("%s: %w", op, ErrPageNotFound)
-	} else if len(historyResp.Query.Pages[0].Revisions) == 0 {
+	}
+
+	currPage := historyResp.Query.Pages[0]
+
+	if len(currPage.Revisions) == 0 {
 		return Edit{}, fmt.Errorf("%s: %w", op, ErrNoRevisions)
 	}
 
-	revisions := historyResp.Query.Pages[0].Revisions
+	revisions := currPage.Revisions
 	currRev := revisions[0]
 
 	edit := Edit{
@@ -83,6 +89,8 @@ func parseEdit(ctx context.Context, jsonResponse []byte, revID int64, locale str
 		User:      currRev.User,
 		UserID:    currRev.UserID,
 		Timestamp: currRev.Timestamp,
+		PageID:    currPage.PageId,
+		PageTitle: currPage.Title,
 		Prev:      analyze.Info{},
 	}
 
@@ -125,10 +133,19 @@ func parseEdit(ctx context.Context, jsonResponse []byte, revID int64, locale str
 func findMostRecentTaggedRev(revisions []rev) (rev, error) {
 	for i := 1; i < len(revisions); i++ {
 		comment := revisions[i].Comment
-		if utils.ContainsAny(comment, possibleTags()) {
+		if containsAny(comment, possibleTags()) {
 			return revisions[i], nil
 		}
 	}
 
 	return rev{}, ErrNoReferencePoint
+}
+
+func containsAny(target string, substrings []string) bool {
+	for _, sub := range substrings {
+		if strings.Contains(target, sub) {
+			return true
+		}
+	}
+	return false
 }

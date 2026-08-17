@@ -2,11 +2,11 @@ package entity
 
 type Editor struct {
 	EditorID int64 `db:"editor_id"`
-	Nickname int64 `db:"nickname"`
+	Nickname int64 `db:"nickname"` // Nickname on the wiki site
 }
 
 type EditorAccount struct {
+	WikiID   int64 `db:"wiki_id"` // userid on the wiki site
 	Locale   int64 `db:"locale"`
-	WikiID   int64 `db:"wiki_id"`
 	EditorID int64 `db:"editor_id"`
 }

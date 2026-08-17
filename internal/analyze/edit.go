@@ -1,16 +1,11 @@
 package analyze
 
-type Edit struct {
-	Prev Info
-	Curr Info
+func GetQualityDiff(Prev Info, Curr Info, metrics ...Metric) float64 {
+	return Curr.GetQuality(metrics...) - Prev.GetQuality(metrics...)
 }
 
-func (e *Edit) GetQualityDiff(metrics ...Metric) float64 {
-	return e.Curr.GetQuality(metrics...) - e.Prev.GetQuality(metrics...)
-}
-
-func (e *Edit) GetCost(metrics ...Metric) int {
-	qualityDiff := e.GetQualityDiff(metrics...)
+func GetCost(Prev Info, Curr Info, metrics ...Metric) int {
+	qualityDiff := GetQualityDiff(Prev, Curr, metrics...)
 	if qualityDiff < 0 {
 		qualityDiff *= -0.3
 	}

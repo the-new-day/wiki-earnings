@@ -36,8 +36,6 @@ func fetch(ctx context.Context, rawURL string) ([]byte, error) {
 			return nil, err
 		}
 
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-
 		resp, err := httpClient.Do(req)
 		if err != nil {
 			lastErr = err

@@ -2,7 +2,6 @@ package metric
 
 import (
 	"github.com/the-new-day/protanki-wiki-admin/internal/analyze"
-	"github.com/the-new-day/protanki-wiki-admin/internal/utils"
 )
 
 type ArticleStructure struct {
@@ -23,7 +22,7 @@ func (p *ArticleStructure) Apply(info *analyze.Info) float64 {
 	}
 
 	sectionCount := len(info.Sections)
-	return utils.SatInt(sectionCount, p.sectionCountCap)
+	return analyze.SatInt(sectionCount, p.sectionCountCap)
 }
 
 func isSectionStructureValid(sections []analyze.Section) bool {

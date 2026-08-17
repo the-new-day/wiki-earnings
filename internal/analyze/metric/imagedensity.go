@@ -19,6 +19,9 @@ func NewImageDensity(weight int, densityCap float64) *ImageDensity {
 
 func (d *ImageDensity) Apply(info *analyze.Info) float64 {
 	wordCount := len(info.Words)
+	if wordCount < analyze.ImageDensityWordCountTreshold {
+		return 0
+	}
 	imageCount := len(info.Images)
 	return utils.Sat(utils.Density(imageCount, wordCount), d.densityCap)
 }

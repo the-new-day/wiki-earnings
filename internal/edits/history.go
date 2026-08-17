@@ -1,25 +1,11 @@
-package parse
+package edits
 
 import (
 	"encoding/json"
-	"errors"
 	"net/url"
 
 	"github.com/the-new-day/protanki-wiki-admin/internal/analyze"
 	"github.com/the-new-day/protanki-wiki-admin/internal/utils"
-)
-
-var (
-	ErrPageNotFound = errors.New("page not found")
-)
-
-const (
-	MinorEditTag             = "(ME)"
-	ItemAdditionEditTag      = "(IA)"
-	ArticleEditTag           = "(AE)"
-	RefactoredArticleEditTag = "(RA)"
-	TranslatedArticleEditTag = "(TA)"
-	NewArticleEditTag        = "(NA)"
 )
 
 func possibleTags() []string {

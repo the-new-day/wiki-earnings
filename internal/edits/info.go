@@ -1,7 +1,8 @@
-package parse
+package edits
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -9,8 +10,6 @@ import (
 	"github.com/the-new-day/protanki-wiki-admin/internal/analyze"
 	"golang.org/x/net/html"
 )
-
-const wikiUrl = "https://wiki.pro-tanki.online/"
 
 const parseActionQueryString = "/api.php?action=parse&prop=revid|text|tocdata|links|templates|images|categories|externallinks&formatversion=2&format=json"
 
@@ -87,6 +86,10 @@ type parseResponse struct {
 		Images     []string   `json:"images"`
 		TocData    tocData    `json:"tocdata"`
 	} `json:"parse"`
+	Error struct {
+		Code string `json:"code"`
+		Info string `json:"info"`
+	} `json:"error"`
 }
 
 func parseInfo(jsonResponse []byte) (analyze.Info, error) {
@@ -94,6 +97,13 @@ func parseInfo(jsonResponse []byte) (analyze.Info, error) {
 
 	if err := json.Unmarshal(jsonResponse, &parseResp); err != nil {
 		return analyze.Info{}, err
+	}
+
+	if parseResp.Error.Code != "" {
+		if parseResp.Error.Code == "missingtitle" {
+			return analyze.Info{}, ErrPageNotFound
+		}
+		return analyze.Info{}, fmt.Errorf("API error: [%s] %s", parseResp.Error.Code, parseResp.Error.Info)
 	}
 
 	resp := parseResp.Parse

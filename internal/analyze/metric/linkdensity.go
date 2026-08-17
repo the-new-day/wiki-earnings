@@ -19,6 +19,10 @@ func NewLinkDensity(weight int, densityCap float64) *LinkDensity {
 
 func (d *LinkDensity) Apply(info *analyze.Info) float64 {
 	wordCount := len(info.Words)
+	if wordCount < analyze.LinkDensityWordCountTreshold {
+		return 0
+	}
+
 	linkCount := len(info.Links)
 	return utils.Sat(utils.Density(linkCount, wordCount), d.densityCap)
 }

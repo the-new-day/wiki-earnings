@@ -7,16 +7,18 @@ const (
 	WordCountMidpoint  = 1000
 	WordCountSteepness = 0.002
 
-	LinkDensityWeight = 3
-	LinkDensityCap    = 4.0
+	LinkDensityWordCountTreshold = 500
+	LinkDensityWeight            = 2
+	LinkDensityCap               = 4.0
 
-	ImageDensityWeight = 1
-	ImageDensityCap    = 0.2
+	ImageDensityWordCountTreshold = 300
+	ImageDensityWeight            = 1
+	ImageDensityCap               = 0.2
 
 	CategoryCountWeight = 1
-	CategoryCountCap    = 3
+	CategoryCountCap    = 1
 
-	ArticleStructureWeight          = 3
+	ArticleStructureWeight          = 2
 	ArticleStructureSectionCountCap = 10
 
 	TemplateUsageWeight = 1

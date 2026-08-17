@@ -5,7 +5,7 @@ import (
 
 	"github.com/the-new-day/protanki-wiki-admin/internal/analyze"
 	"github.com/the-new-day/protanki-wiki-admin/internal/analyze/metric"
-	"github.com/the-new-day/protanki-wiki-admin/internal/parse"
+	"github.com/the-new-day/protanki-wiki-admin/internal/edits"
 )
 
 func main() {
@@ -25,22 +25,23 @@ func main() {
 		templateUsage,
 	}
 
-	// title := "Ежедневные подарки"
-	// locale := "ru"
+	title := "Проп"
+	locale := "ru"
 
-	// info, err := parse.FetchInfo(title, locale)
-	// cost, err := info.GetCost(metrics...)
-
-	// fmt.Println(cost)
-
-	// scores := info.GetMetricScores(metrics...)
-	// fmt.Println(scores)
-	// fmt.Println(info.GetQuality(metrics...))
-
-	edit, err := parse.FetchLastEdit("Участник:New.Day", "ru")
+	info, err := edits.FetchInfo(title, locale)
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println(edit.GetCost(metrics...))
+	cost := info.GetCost(metrics...)
+
+	fmt.Println(cost)
+
+	scores := info.GetMetricScores(metrics...)
+	fmt.Println(scores)
+	fmt.Println(info.GetQuality(metrics...))
+
+	// edit, err := parse.FetchLastEdit("Участник:New.Day", "ru")
+
+	// fmt.Println(edit.GetCost(metrics...))
 }

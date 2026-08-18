@@ -17,7 +17,7 @@ type Revision struct {
 	RevID      int64        `db:"revision_id"`
 	Locale     string       `db:"locale"`
 	EditorID   int64        `db:"editor_id"`
-	PageID     string       `db:"page_id"`
+	PageID     int64        `db:"page_id"`
 	PageTitle  string       `db:"page_title"`
 	Type       RevisionType `db:"type"`
 	Comment    string       `db:"comment"`

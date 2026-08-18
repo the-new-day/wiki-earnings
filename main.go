@@ -2,34 +2,41 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log"
+	"os/signal"
+	"syscall"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/mediawiki"
+	"github.com/the-new-day/protanki-wiki-admin/internal/config"
+	"github.com/the-new-day/protanki-wiki-admin/internal/storage/postgres"
 )
 
 func main() {
-	title := "Праздничные_акции_и_скидки"
-	locale := "ru"
-	revID := int64(16552)
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
 
-	ctx := context.TODO()
+func run() error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	edit, err := mediawiki.FetchEdit(ctx, title, revID, locale)
+	cfg, err := config.Load()
 	if err != nil {
-		fmt.Println(err)
-		return
+		return err
 	}
 
-	fmt.Println(edit.Prev.RevId, edit.Curr.RevId)
+	pool, err := postgres.Connect(ctx, cfg.Postgres)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
 
-	// pricer := pricing.Default()
-	// cost := pricer.Cost(entity.ArticleEdit, &edit.Prev, &edit.Curr)
-	// fmt.Println(cost)
-	//
-	// info, err := mediawiki.FetchRecentInfo(ctx, title, locale)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	//
-	// fmt.Println(pricer.Quality(&info), pricer.Scores(&info))
+	log.Printf("connected to postgres %s:%d/%s, locales: %v",
+		cfg.Postgres.Host, cfg.Postgres.Port, cfg.Postgres.Database, cfg.Locales)
+
+	// TODO: repositories over pool, then the sync loop.
+	<-ctx.Done()
+	log.Println("shutting down")
+
+	return nil
 }

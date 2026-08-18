@@ -1,3 +1,7 @@
+mocks:
+	go tool mockery
+.PHONY: mocks
+
 test:
 	go test -v -race ./...
 .PHONY: test

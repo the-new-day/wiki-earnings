@@ -1,7 +1,12 @@
 package metric
 
 import (
-	"github.com/the-new-day/protanki-wiki-admin/internal/analyze"
+	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
+)
+
+const (
+	DefaultArticleStructureWeight          = 2
+	DefaultArticleStructureSectionCountCap = 10
 )
 
 type ArticleStructure struct {
@@ -16,16 +21,16 @@ func NewArticleStructure(weight int, sectionCountCap int) *ArticleStructure {
 	}
 }
 
-func (p *ArticleStructure) Apply(info *analyze.Info) float64 {
+func (p *ArticleStructure) Apply(info *entity.ArticleInfo) float64 {
 	if !isSectionStructureValid(info.Sections) {
 		return 0
 	}
 
 	sectionCount := len(info.Sections)
-	return analyze.SatInt(sectionCount, p.sectionCountCap)
+	return SatInt(sectionCount, p.sectionCountCap)
 }
 
-func isSectionStructureValid(sections []analyze.Section) bool {
+func isSectionStructureValid(sections []entity.Section) bool {
 	if len(sections) == 0 || sections[0].Level > 2 {
 		return false
 	}

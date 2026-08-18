@@ -1,8 +1,7 @@
-package analyze
+package metric
 
 import (
 	"fmt"
-	"math"
 )
 
 // Density returns density of items compared to insideOf in percent.
@@ -26,8 +25,4 @@ func SatInt(x, cap int) float64 {
 		panic(fmt.Sprintf("satInt(%d, %d): cap is <= 0", x, cap))
 	}
 	return max(0, min(float64(x)/float64(cap), 1.0))
-}
-
-func Logistic(x float64) float64 {
-	return 1.0 / (1.0 + math.Exp(-WordCountSteepness*(x-WordCountMidpoint)))
 }

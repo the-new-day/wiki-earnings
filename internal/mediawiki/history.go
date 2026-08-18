@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/analyze"
+	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -19,8 +19,8 @@ const getHistoryQueryString = "/api.php?action=query&prop=revisions&rvlimit=500&
 type Edit struct {
 	RevID     int64
 	Locale    string
-	Prev      analyze.Info
-	Curr      analyze.Info
+	Prev      entity.ArticleInfo
+	Curr      entity.ArticleInfo
 	Comment   string
 	User      string
 	UserID    int64
@@ -91,7 +91,7 @@ func parseEdit(ctx context.Context, jsonResponse []byte, revID int64, locale str
 		Timestamp: currRev.Timestamp,
 		PageID:    currPage.PageId,
 		PageTitle: currPage.Title,
-		Prev:      analyze.Info{},
+		Prev:      entity.ArticleInfo{},
 	}
 
 	mostRecentRev, err := findMostRecentTaggedRev(revisions)
@@ -103,7 +103,7 @@ func parseEdit(ctx context.Context, jsonResponse []byte, revID int64, locale str
 		return Edit{}, fmt.Errorf("%s: %w", op, err)
 	}
 
-	var currInfo, prevInfo analyze.Info
+	var currInfo, prevInfo entity.ArticleInfo
 	g, gctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
@@ -113,7 +113,7 @@ func parseEdit(ctx context.Context, jsonResponse []byte, revID int64, locale str
 	})
 	g.Go(func() error {
 		if isNewArticle {
-			prevInfo = analyze.Info{}
+			prevInfo = entity.ArticleInfo{}
 			return nil
 		}
 

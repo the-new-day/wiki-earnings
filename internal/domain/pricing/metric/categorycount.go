@@ -1,7 +1,12 @@
 package metric
 
 import (
-	"github.com/the-new-day/protanki-wiki-admin/internal/analyze"
+	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
+)
+
+const (
+	DefaultCategoryCountWeight = 1
+	DefaultCategoryCountCap    = 1
 )
 
 type CategoryCount struct {
@@ -16,7 +21,7 @@ func NewCategoryCount(weight int, cap int) *CategoryCount {
 	}
 }
 
-func (p *CategoryCount) Apply(info *analyze.Info) float64 {
+func (p *CategoryCount) Apply(info *entity.ArticleInfo) float64 {
 	count := len(info.Categories)
-	return analyze.SatInt(count, p.cap)
+	return SatInt(count, p.cap)
 }

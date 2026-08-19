@@ -7,7 +7,11 @@ import (
 	"syscall"
 
 	"github.com/the-new-day/protanki-wiki-admin/internal/config"
+	"github.com/the-new-day/protanki-wiki-admin/internal/domain/pricing"
+	"github.com/the-new-day/protanki-wiki-admin/internal/mediawiki"
 	"github.com/the-new-day/protanki-wiki-admin/internal/storage/postgres"
+	"github.com/the-new-day/protanki-wiki-admin/internal/sync"
+	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings"
 )
 
 func main() {
@@ -34,7 +38,36 @@ func run() error {
 	log.Printf("connected to postgres %s:%d/%s, locales: %v",
 		cfg.Postgres.Host, cfg.Postgres.Port, cfg.Postgres.Database, cfg.Locales)
 
-	// TODO: repositories over pool, then the sync loop.
+	editorRepo := postgres.NewEditorRepository(pool)
+	revisionRepo := postgres.NewRevisionRepository(pool)
+	syncStateRepo := postgres.NewSyncStateRepository(pool)
+	deadLetterRepo := postgres.NewDeadLetterRepository(pool)
+	locker := postgres.NewLocker(pool)
+
+	syncSvc := sync.New(
+		mediawiki.NewClient(),
+		editorRepo,
+		revisionRepo,
+		syncStateRepo,
+		deadLetterRepo,
+		pricing.Default(),
+		locker,
+		sync.Config{
+			Locales:         cfg.Locales,
+			BatchSize:       cfg.SyncBatchSize,
+			InitialLookback: cfg.InitialLookback,
+			MinInterval:     cfg.SyncMinInterval,
+			MaxDuration:     cfg.SyncMaxDuration,
+			Concurrency:     cfg.SyncConcurrency,
+			MaxAttempts:     cfg.DeadLetterMaxAttempts,
+			ReplayBatchSize: cfg.DeadLetterBatchSize,
+		},
+	)
+
+	earningsUC := earnings.New(editorRepo, revisionRepo, syncSvc)
+	_ = earningsUC // TODO: wire into HTTP handlers once the transport layer exists
+
+	// TODO: run syncSvc.Replay on a ticker once the transport layer exists.
 	<-ctx.Done()
 	log.Println("shutting down")
 

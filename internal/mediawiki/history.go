@@ -16,25 +16,12 @@ import (
 
 const getHistoryQueryString = "/api.php?action=query&prop=revisions&rvlimit=500&rvprop=ids|userid|user|comment|timestamp&format=json&formatversion=2&rvdir=older"
 
-type Edit struct {
-	RevID     int64
-	Locale    string
-	Prev      entity.ArticleInfo
-	Curr      entity.ArticleInfo
-	Comment   string
-	User      string
-	UserID    int64
-	Timestamp time.Time
-	PageID    int64
-	PageTitle string
-}
-
-func FetchEdit(ctx context.Context, title string, revID int64, locale string) (Edit, error) {
+func FetchEdit(ctx context.Context, title string, revID int64, locale string) (entity.Edit, error) {
 	reqUrl := wikiUrl + locale + getHistoryQueryString + "&rvstartid=" + strconv.FormatInt(revID, 10) + "&titles=" + url.QueryEscape(title)
 
 	body, err := fetch(ctx, reqUrl)
 	if err != nil {
-		return Edit{}, err
+		return entity.Edit{}, err
 	}
 
 	return parseEdit(ctx, body, revID, locale)
@@ -60,29 +47,29 @@ type historyResponse struct {
 	} `json:"query"`
 }
 
-func parseEdit(ctx context.Context, jsonResponse []byte, revID int64, locale string) (Edit, error) {
+func parseEdit(ctx context.Context, jsonResponse []byte, revID int64, locale string) (entity.Edit, error) {
 	var op = fmt.Sprintf("fetch edit rev=%d locale=%s", revID, locale)
 
 	var historyResp historyResponse
 
 	if err := json.Unmarshal(jsonResponse, &historyResp); err != nil {
-		return Edit{}, fmt.Errorf("%s: json error: %w", op, err)
+		return entity.Edit{}, fmt.Errorf("%s: json error: %w", op, err)
 	}
 
 	if len(historyResp.Query.Pages) == 0 {
-		return Edit{}, fmt.Errorf("%s: %w", op, ErrPageNotFound)
+		return entity.Edit{}, fmt.Errorf("%s: %w", op, ErrPageNotFound)
 	}
 
 	currPage := historyResp.Query.Pages[0]
 
 	if len(currPage.Revisions) == 0 {
-		return Edit{}, fmt.Errorf("%s: %w", op, ErrNoRevisions)
+		return entity.Edit{}, fmt.Errorf("%s: %w", op, ErrNoRevisions)
 	}
 
 	revisions := currPage.Revisions
 	currRev := revisions[0]
 
-	edit := Edit{
+	edit := entity.Edit{
 		RevID:     revID,
 		Locale:    locale,
 		Comment:   currRev.Comment,
@@ -100,7 +87,7 @@ func parseEdit(ctx context.Context, jsonResponse []byte, revID int64, locale str
 	if errors.Is(err, ErrNoReferencePoint) {
 		isNewArticle = true
 	} else if err != nil {
-		return Edit{}, fmt.Errorf("%s: %w", op, err)
+		return entity.Edit{}, fmt.Errorf("%s: %w", op, err)
 	}
 
 	var currInfo, prevInfo entity.ArticleInfo
@@ -122,7 +109,7 @@ func parseEdit(ctx context.Context, jsonResponse []byte, revID int64, locale str
 		return err
 	})
 	if err := g.Wait(); err != nil {
-		return Edit{}, fmt.Errorf("%s: %w", op, err)
+		return entity.Edit{}, fmt.Errorf("%s: %w", op, err)
 	}
 	edit.Curr = currInfo
 	edit.Prev = prevInfo

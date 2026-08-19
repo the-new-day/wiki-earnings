@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
 )
 
 const recentChangesQueryString = "/api.php?action=query&list=recentchanges" +
@@ -26,7 +28,7 @@ type RecentChange struct {
 // FetchRecentChanges returns up to limit changes of a locale starting at since
 // (inclusive), oldest first. Callers advance their cursor and call again to
 // page through; an empty result means there is nothing newer.
-func FetchRecentChanges(ctx context.Context, locale string, since time.Time, limit int) ([]RecentChange, error) {
+func FetchRecentChanges(ctx context.Context, locale string, since time.Time, limit int) ([]entity.RecentChange, error) {
 	var op = fmt.Sprintf("fetch recent changes locale=%s since=%s", locale, since.UTC().Format(time.RFC3339))
 
 	reqUrl := wikiUrl + locale + recentChangesQueryString +
@@ -66,7 +68,7 @@ type recentChangesResponse struct {
 	} `json:"error"`
 }
 
-func parseRecentChanges(jsonResponse []byte) ([]RecentChange, error) {
+func parseRecentChanges(jsonResponse []byte) ([]entity.RecentChange, error) {
 	var resp recentChangesResponse
 
 	if err := json.Unmarshal(jsonResponse, &resp); err != nil {
@@ -77,9 +79,9 @@ func parseRecentChanges(jsonResponse []byte) ([]RecentChange, error) {
 		return nil, fmt.Errorf("API error: [%s] %s", resp.Error.Code, resp.Error.Info)
 	}
 
-	changes := make([]RecentChange, len(resp.Query.RecentChanges))
+	changes := make([]entity.RecentChange, len(resp.Query.RecentChanges))
 	for i, rc := range resp.Query.RecentChanges {
-		changes[i] = RecentChange{
+		changes[i] = entity.RecentChange{
 			RevID:     rc.RevId,
 			PageID:    rc.PageId,
 			Title:     rc.Title,

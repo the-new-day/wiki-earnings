@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
-	"github.com/the-new-day/protanki-wiki-admin/internal/mediawiki"
 	wikisync "github.com/the-new-day/protanki-wiki-admin/internal/sync"
 	"github.com/the-new-day/protanki-wiki-admin/internal/sync/mocks"
 )
@@ -35,11 +34,11 @@ var (
 
 // change is one edit as the wiki reports it. Timestamps follow revision ids, so
 // a batch is ordered the way MediaWiki orders it: oldest first.
-func change(revID int64, comment string) mediawiki.RecentChange {
-	return mediawiki.RecentChange{
+func change(revID int64, comment string) entity.RecentChange {
+	return entity.RecentChange{
 		RevID:     revID,
 		PageID:    100,
-		Title:     "Танк",
+		Title:     "Tank",
 		User:      editor.Nickname,
 		UserID:    wikiUserID,
 		Comment:   comment,
@@ -47,7 +46,7 @@ func change(revID int64, comment string) mediawiki.RecentChange {
 	}
 }
 
-func anonymous(revID int64, comment string) mediawiki.RecentChange {
+func anonymous(revID int64, comment string) entity.RecentChange {
 	c := change(revID, comment)
 	c.UserID = 0
 	c.User = "77.88.99.1"
@@ -107,11 +106,11 @@ func (d *deps) storedAt(state entity.SyncState) {
 
 // wikiReturns hands out the batches in order, one per call and nothing after
 // them, recording the cursor each call was made with.
-func (d *deps) wikiReturns(batches ...[]mediawiki.RecentChange) *recorder[time.Time] {
+func (d *deps) wikiReturns(batches ...[]entity.RecentChange) *recorder[time.Time] {
 	rec := &recorder[time.Time]{}
 
 	d.wiki.EXPECT().FetchRecentChanges(mock.Anything, locale, mock.Anything, d.cfg.BatchSize).
-		RunAndReturn(func(_ context.Context, _ string, since time.Time, _ int) ([]mediawiki.RecentChange, error) {
+		RunAndReturn(func(_ context.Context, _ string, since time.Time, _ int) ([]entity.RecentChange, error) {
 			rec.add(since)
 			if n := rec.len() - 1; n < len(batches) {
 				return batches[n], nil
@@ -137,7 +136,7 @@ func (d *deps) editorIsNew() {
 
 func (d *deps) editIsFetchable() {
 	d.wiki.EXPECT().FetchEdit(mock.Anything, mock.Anything, mock.Anything, locale).
-		Return(mediawiki.Edit{Curr: entity.ArticleInfo{Title: "Танк"}}, nil)
+		Return(entity.Edit{Curr: entity.ArticleInfo{Title: "Танк"}}, nil)
 }
 
 func (d *deps) pricesAt(cost int64) {
@@ -214,12 +213,12 @@ func TestService_StoresPricedRevisions(t *testing.T) {
 		comment  string
 		wantType entity.RevisionType
 	}{
-		{"minor edit", "(ME) опечатка", entity.MinorEdit},
-		{"item addition", "(IA) добавил танк", entity.ItemAddition},
-		{"article edit", "(AE) переписал раздел", entity.ArticleEdit},
-		{"refactored article", "(RA) причесал структуру", entity.RefactoredArticle},
-		{"translated article", "(TA) перевод с русского", entity.TranslatedArticle},
-		{"new article", "(NA) статья про Смоки", entity.NewArticle},
+		{"minor edit", "(ME)", entity.MinorEdit},
+		{"item addition", "(IA) added a paint", entity.ItemAddition},
+		{"article edit", "(AE) /* Tanks */ added a section", entity.ArticleEdit},
+		{"refactored article", "(RA) reworked the structure", entity.RefactoredArticle},
+		{"translated article", "(TA) translated from RU", entity.TranslatedArticle},
+		{"new article", "(NA) new article!!", entity.NewArticle},
 		{"a new article outranks an edit when both are claimed", "(NA) (AE)", entity.NewArticle},
 	}
 
@@ -230,7 +229,7 @@ func TestService_StoresPricedRevisions(t *testing.T) {
 			d := newDeps(t)
 			d.storedAt(entity.SyncState{})
 			saved := d.saves()
-			d.wikiReturns([]mediawiki.RecentChange{edit})
+			d.wikiReturns([]entity.RecentChange{edit})
 			d.editorIsKnown()
 			d.editIsFetchable()
 			stored := d.stores()
@@ -264,10 +263,10 @@ func TestService_StoresPricedRevisions(t *testing.T) {
 func TestService_SkipsEditsNobodyCanBePaidFor(t *testing.T) {
 	tests := []struct {
 		name string
-		edit mediawiki.RecentChange
+		edit entity.RecentChange
 	}{
-		{"an untagged edit is not a claim for payment", change(11, "просто поправил ссылку")},
-		{"an anonymous edit has nobody to pay", anonymous(11, "(AE) правка")},
+		{"an untagged edit is not a claim for payment", change(11, "default edit")},
+		{"an anonymous edit has nobody to pay", anonymous(11, "(AE) payable edit")},
 	}
 
 	for _, tt := range tests {
@@ -275,10 +274,8 @@ func TestService_SkipsEditsNobodyCanBePaidFor(t *testing.T) {
 			d := newDeps(t)
 			d.storedAt(entity.SyncState{})
 			saved := d.saves()
-			d.wikiReturns([]mediawiki.RecentChange{tt.edit})
+			d.wikiReturns([]entity.RecentChange{tt.edit})
 
-			// Nothing else is set up, so any lookup, fetch, price or write --
-			// including a dead letter -- fails this test where it happens.
 			require.NoError(t, d.service().Sync(context.Background()))
 
 			assert.Equal(t, tt.edit.RevID, saved.last(t).LastRevID,
@@ -328,13 +325,13 @@ func TestService_KeepsTheEditorRegistryInStepWithTheWiki(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			edit := change(11, "(AE) переписал раздел")
+			edit := change(11, "(AE) article edit")
 			edit.User = tt.user
 
 			d := newDeps(t)
 			d.storedAt(entity.SyncState{})
 			d.saves()
-			d.wikiReturns([]mediawiki.RecentChange{edit})
+			d.wikiReturns([]entity.RecentChange{edit})
 			d.editIsFetchable()
 			d.pricesAt(1000)
 			stored := d.stores()
@@ -367,7 +364,7 @@ func TestService_DeadLettersWhatItCannotPrice(t *testing.T) {
 			name: "a nickname that cannot be updated holds up the revision",
 			arrange: func(d *deps) {
 				d.editors.EXPECT().FindByLocaleUser(mock.Anything, locale, wikiUserID).
-					Return(entity.Editor{EditorID: editor.EditorID, Nickname: "прежний_ник"}, true, nil)
+					Return(entity.Editor{EditorID: editor.EditorID, Nickname: "old_nickname"}, true, nil)
 				d.editors.EXPECT().Rename(mock.Anything, editor.EditorID, editor.Nickname).Return(errStore)
 			},
 			wantReason: errStore.Error(),
@@ -377,7 +374,7 @@ func TestService_DeadLettersWhatItCannotPrice(t *testing.T) {
 			arrange: func(d *deps) {
 				d.editorIsKnown()
 				d.wiki.EXPECT().FetchEdit(mock.Anything, mock.Anything, mock.Anything, locale).
-					Return(mediawiki.Edit{}, errWiki)
+					Return(entity.Edit{}, errWiki)
 			},
 			wantReason: errWiki.Error(),
 		},
@@ -395,12 +392,12 @@ func TestService_DeadLettersWhatItCannotPrice(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			edit := change(11, "(AE) переписал раздел")
+			edit := change(11, "(AE) article edit")
 
 			d := newDeps(t)
 			d.storedAt(entity.SyncState{})
 			saved := d.saves()
-			d.wikiReturns([]mediawiki.RecentChange{edit})
+			d.wikiReturns([]entity.RecentChange{edit})
 			parked := d.deadLetters()
 			tt.arrange(d)
 
@@ -473,10 +470,10 @@ func TestService_SkipsWhatIsAlreadyBehindTheCursor(t *testing.T) {
 	saved := d.saves()
 	// rcstart is a timestamp and inclusive, so a batch opens with edits that
 	// were handled on the previous pass.
-	d.wikiReturns([]mediawiki.RecentChange{
-		change(4, "(AE) старая"),
-		change(5, "(AE) уже учтённая"),
-		change(6, "(AE) новая"),
+	d.wikiReturns([]entity.RecentChange{
+		change(4, "(AE) old"),
+		change(5, "(AE) already counted"),
+		change(6, "(AE) new"),
 	})
 	d.editorIsKnown()
 	d.editIsFetchable()
@@ -496,9 +493,9 @@ func TestService_StopsWhenABatchBringsNothingNew(t *testing.T) {
 	d.saves()
 	// A full batch, every edit of it already seen. Asking again would return
 	// the same batch, which is how a cursor that cannot advance spins forever.
-	fetches := d.wikiReturns([]mediawiki.RecentChange{
-		change(8, "(AE) старая"),
-		change(9, "(AE) старая"),
+	fetches := d.wikiReturns([]entity.RecentChange{
+		change(8, "(AE) old"),
+		change(9, "(AE) old"),
 	})
 
 	require.NoError(t, d.service().Sync(context.Background()))
@@ -511,8 +508,8 @@ func TestService_PagesFromTheLastEditItRead(t *testing.T) {
 	d.storedAt(entity.SyncState{})
 	d.saves()
 	fetches := d.wikiReturns(
-		[]mediawiki.RecentChange{change(11, "(ME) раз"), change(12, "(ME) два")},
-		[]mediawiki.RecentChange{change(13, "(ME) три")},
+		[]entity.RecentChange{change(11, "(ME) one"), change(12, "(ME) two")},
+		[]entity.RecentChange{change(13, "(ME) three")},
 	)
 	d.editorIsKnown()
 	d.editIsFetchable()
@@ -597,7 +594,7 @@ func TestService_CollapsesConcurrentCalls(t *testing.T) {
 
 	var runs atomic.Int64
 	d.wiki.EXPECT().FetchRecentChanges(mock.Anything, locale, mock.Anything, d.cfg.BatchSize).
-		RunAndReturn(func(context.Context, string, time.Time, int) ([]mediawiki.RecentChange, error) {
+		RunAndReturn(func(context.Context, string, time.Time, int) ([]entity.RecentChange, error) {
 			runs.Add(1)
 			// Holding the run open widens the window the others arrive in. It
 			// only ever makes this test more certain: without the collapse

@@ -21,7 +21,7 @@ type change struct {
 	Timestamp time.Time
 }
 
-func changeFromRecent(c mediawiki.RecentChange) change {
+func changeFromRecent(c entity.RecentChange) change {
 	return change{
 		RevID:     c.RevID,
 		PageID:    c.PageID,
@@ -45,15 +45,11 @@ func changeFromFailed(f entity.FailedRevision) change {
 	}
 }
 
-// taggedTypes maps the tags editors put in their edit summaries to the kind of
-// work being claimed. Order is the tie-break for a comment carrying more than
-// one tag: the kinds that price an article outright come before the ones that
-// price a difference, because an article that is new or translated has no
-// meaningful "before" to diff against.
 var taggedTypes = []struct {
 	tag  string
 	kind entity.RevisionType
 }{
+	// Order matters: it's the tie-break for a comment carrying more than one tag
 	{mediawiki.NewArticleEditTag, entity.NewArticle},
 	{mediawiki.TranslatedArticleEditTag, entity.TranslatedArticle},
 	{mediawiki.RefactoredArticleEditTag, entity.RefactoredArticle},
@@ -62,9 +58,7 @@ var taggedTypes = []struct {
 	{mediawiki.MinorEditTag, entity.MinorEdit},
 }
 
-// classify reads what kind of work an edit summary claims. An untagged comment
-// is not an error: the tag is how an editor asks to be paid, and plenty of
-// edits never ask.
+// classify reads what kind of work an edit summary claims (if any).
 func classify(comment string) (entity.RevisionType, bool) {
 	for _, t := range taggedTypes {
 		if strings.Contains(comment, t.tag) {

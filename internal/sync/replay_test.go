@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
-	"github.com/the-new-day/protanki-wiki-admin/internal/mediawiki"
 )
 
 const failedRevID = 11
@@ -22,10 +21,10 @@ func failedRevision(attempts int) entity.FailedRevision {
 		RevID:      failedRevID,
 		Locale:     locale,
 		PageID:     100,
-		PageTitle:  "Танк",
+		PageTitle:  "Tank",
 		WikiUserID: wikiUserID,
 		Nickname:   "tanker",
-		Comment:    "(AE) переписал раздел",
+		Comment:    "(AE) add a section",
 		Type:       entity.ArticleEdit,
 		EditedAt:   firstEdit,
 		Attempts:   attempts,
@@ -38,7 +37,7 @@ func failedRevision(attempts int) entity.FailedRevision {
 func (d *deps) editIsUnfetchable() {
 	d.editorIsKnown()
 	d.wiki.EXPECT().FetchEdit(mock.Anything, mock.Anything, mock.Anything, locale).
-		Return(mediawiki.Edit{}, errWiki)
+		Return(entity.Edit{}, errWiki)
 }
 
 func reasonMentions(want string) any {
@@ -106,7 +105,7 @@ func TestService_ReplayTrustsTheStoredClassification(t *testing.T) {
 	// The dead letter already knows what kind of work this was, and the comment
 	// it was classified from may since have been edited away.
 	failed.Type = entity.TranslatedArticle
-	failed.Comment = "переписанный без тега комментарий"
+	failed.Comment = "comment without a tag"
 
 	d := newDeps(t)
 	d.dead.EXPECT().ListPending(mock.Anything, d.cfg.ReplayBatchSize).

@@ -7,29 +7,20 @@ import (
 	"time"
 
 	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
-	"github.com/the-new-day/protanki-wiki-admin/internal/mediawiki"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 )
 
-// WikiClient is the wiki as this service needs it: a list of what changed, and
-// the before/after of one change. It speaks mediawiki's own types rather than
-// a private copy of them -- one thin import beats two structs kept in step by
-// hand.
 type WikiClient interface {
-	FetchRecentChanges(ctx context.Context, locale string, since time.Time, limit int) ([]mediawiki.RecentChange, error)
-	FetchEdit(ctx context.Context, title string, revID int64, locale string) (mediawiki.Edit, error)
+	FetchRecentChanges(ctx context.Context, locale string, since time.Time, limit int) ([]entity.RecentChange, error)
+	FetchEdit(ctx context.Context, title string, revID int64, locale string) (entity.Edit, error)
 }
 
 // EditorRegistry resolves the wiki account behind an edit to the editor who
-// gets paid for it, and is where the two are kept in step. The account --
-// (locale, wiki user id) -- is the identity; the nickname is a label attached
-// to it and nothing is ever looked up by it.
+// gets paid for it.
 type EditorRegistry interface {
 	// FindByLocaleUser returns the editor a wiki account belongs to, carrying
-	// the nickname as stored so that a rename can be spotted. found is false
-	// for an account nobody has seen before, which is an ordinary outcome
-	// rather than an error.
+	// the nickname as stored so that a rename can be spotted.
 	FindByLocaleUser(ctx context.Context, locale string, wikiUserID int64) (editor entity.Editor, found bool, err error)
 
 	// Register records a wiki account and the editor behind it. A batch is
@@ -61,13 +52,16 @@ type DeadLetter interface {
 	// Put parks a revision. Like every write on the sync path it has to be
 	// idempotent, because a replayed batch parks the same failure twice.
 	Put(ctx context.Context, f entity.FailedRevision) error
-	// ListPending returns entries waiting for another attempt, oldest attempt
-	// first.
+
+	// ListPending returns entries waiting for another attempt, oldest attempt first.
 	ListPending(ctx context.Context, limit int) ([]entity.FailedRevision, error)
+
 	// Fail records another failed attempt and leaves the entry pending.
 	Fail(ctx context.Context, locale string, revID int64, reason string) error
+
 	// Retire stops retrying an entry for good.
 	Retire(ctx context.Context, locale string, revID int64, reason string) error
+
 	// Resolve removes an entry that finally went through.
 	Resolve(ctx context.Context, locale string, revID int64) error
 }
@@ -79,8 +73,7 @@ type Pricer interface {
 
 // Locker keeps two processes off the same locale. The release function is only
 // meaningful when the lock was taken; it is tied to whatever connection holds
-// the lock, which is why it comes back as a closure rather than as an Unlock
-// method.
+// the lock, which is why it comes back as a closure rather than as an Unlock method.
 type Locker interface {
 	TryLock(ctx context.Context, key string) (acquired bool, release func(), err error)
 }
@@ -109,8 +102,7 @@ type Config struct {
 	// Each edit costs three round trips, so serial is far too slow.
 	Concurrency int
 
-	// MaxAttempts is how often a dead-lettered revision is retried before it
-	// is retired.
+	// MaxAttempts is how often a dead-lettered revision is retried before it is retired.
 	MaxAttempts int
 
 	// ReplayBatchSize is how many dead-lettered revisions one Replay takes on.
@@ -136,8 +128,6 @@ func (c Config) withDefaults() Config {
 		c.InitialLookback = defaultInitialLookback
 	}
 	if c.MinInterval <= 0 {
-		// Deliberately not "zero means no throttle": forgetting this field
-		// would put every salary request straight through to the wiki.
 		c.MinInterval = defaultMinInterval
 	}
 	if c.MaxDuration <= 0 {
@@ -220,9 +210,6 @@ func (s *Service) sync(ctx context.Context) error {
 	deadline := time.Now().Add(s.cfg.MaxDuration)
 	errs := make([]error, len(s.cfg.Locales))
 
-	// Not errgroup.WithContext: a locale that fails must not cancel its
-	// siblings. The group is here for the waiting, the errors are collected by
-	// hand and joined.
 	var g errgroup.Group
 	for i, locale := range s.cfg.Locales {
 		g.Go(func() error {
@@ -244,8 +231,6 @@ func (s *Service) syncLocale(ctx context.Context, locale string, deadline time.T
 		return fmt.Errorf("lock: %w", err)
 	}
 	if !acquired {
-		// Somebody else is already on this locale, and their result is as good
-		// as ours would have been.
 		return nil
 	}
 	defer release()
@@ -283,9 +268,6 @@ func (s *Service) syncLocale(ctx context.Context, locale string, deadline time.T
 			return err
 		}
 
-		// No fresh changes means the wiki has nothing past the cursor. It is
-		// also what stops a batch the cursor cannot get past from looping
-		// forever.
 		if len(fresh) == 0 || len(changes) < s.cfg.BatchSize || time.Now().After(deadline) {
 			return nil
 		}
@@ -315,7 +297,7 @@ func (s *Service) save(ctx context.Context, locale string, cur cursor) error {
 // processBatch prices a batch of changes with bounded parallelism. Each edit
 // costs three round trips to the wiki, so a serial batch would spend the whole
 // run's budget on a handful of them.
-func (s *Service) processBatch(ctx context.Context, locale string, changes []mediawiki.RecentChange) error {
+func (s *Service) processBatch(ctx context.Context, locale string, changes []entity.RecentChange) error {
 	if len(changes) == 0 {
 		return nil
 	}
@@ -332,19 +314,15 @@ func (s *Service) processBatch(ctx context.Context, locale string, changes []med
 	return g.Wait()
 }
 
-// processChange handles one edit. Anything that stops it from being priced
-// goes to the dead letter rather than up the stack: the cursor moves past this
-// revision either way, and one deleted page must not wedge a whole locale.
+// processChange handles one edit.
+// Anything that stops it from being priced goes to the dead letter.
 func (s *Service) processChange(ctx context.Context, locale string, c change) error {
 	revType, tagged := classify(c.Comment)
 	if !tagged {
-		// No tag is a claim not made. Untagged edits are not paid work, and
-		// dead-lettering them would bury the real failures in noise.
 		return nil
 	}
 
 	if c.UserID == 0 {
-		// Anonymous edit: there is nobody to pay.
 		return nil
 	}
 
@@ -390,12 +368,6 @@ func (s *Service) attempt(ctx context.Context, locale string, c change, revType 
 
 // resolveEditor finds who to pay for an edit, and keeps the registry in step
 // with the wiki while it is there.
-//
-// The wiki account is the identity, so an account seen for the first time is
-// registered rather than rejected: editors turn up by editing, and refusing to
-// pay somebody until an admin has typed their name in is not a rule anyone
-// asked for. A nickname that no longer matches is a rename of the same person,
-// never a different one -- the account key did not move.
 func (s *Service) resolveEditor(ctx context.Context, locale string, c change) (int64, error) {
 	editor, found, err := s.editors.FindByLocaleUser(ctx, locale, c.UserID)
 	if err != nil {
@@ -411,7 +383,6 @@ func (s *Service) resolveEditor(ctx context.Context, locale string, c change) (i
 		return editor.EditorID, nil
 	}
 
-	// An empty user is the wiki declining to say, not a rename to nothing.
 	if c.User != "" && c.User != editor.Nickname {
 		if err := s.editors.Rename(ctx, editor.EditorID, c.User); err != nil {
 			return 0, fmt.Errorf("rename editor %d to %q: %w", editor.EditorID, c.User, err)
@@ -434,7 +405,7 @@ type cursor struct {
 
 // advancedBy moves the cursor past everything in the batch. The wiki returns
 // oldest first, but the maximum is taken explicitly rather than on trust.
-func (c cursor) advancedBy(changes []mediawiki.RecentChange) cursor {
+func (c cursor) advancedBy(changes []entity.RecentChange) cursor {
 	for _, ch := range changes {
 		if ch.RevID > c.revID {
 			c.revID = ch.RevID
@@ -447,12 +418,14 @@ func (c cursor) advancedBy(changes []mediawiki.RecentChange) cursor {
 	return c
 }
 
-// unseen drops the changes already behind the cursor. rcstart is a timestamp
-// and inclusive, so every batch after the first opens with edits that were
-// already handled; revision ids rise monotonically within one wiki, which is
-// what makes a single comparison enough to tell them apart.
-func unseen(changes []mediawiki.RecentChange, lastRevID int64) []mediawiki.RecentChange {
-	fresh := make([]mediawiki.RecentChange, 0, len(changes))
+// unseen drops the changes already behind the cursor.
+func unseen(changes []entity.RecentChange, lastRevID int64) []entity.RecentChange {
+	// rcstart is a timestamp and inclusive,
+	// so every batch after the first opens with edits that were
+	// already handled; revision ids rise monotonically within one wiki, which is
+	// what makes a single comparison enough to tell them apart.
+
+	fresh := make([]entity.RecentChange, 0, len(changes))
 	for _, c := range changes {
 		if c.RevID > lastRevID {
 			fresh = append(fresh, c)
@@ -462,7 +435,6 @@ func unseen(changes []mediawiki.RecentChange, lastRevID int64) []mediawiki.Recen
 	return fresh
 }
 
-// noLock stands in for an absent Locker so the sync path has no nil checks.
 type noLock struct{}
 
 func (noLock) TryLock(context.Context, string) (bool, func(), error) {

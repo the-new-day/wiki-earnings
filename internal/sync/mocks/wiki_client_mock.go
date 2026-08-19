@@ -9,7 +9,7 @@ import (
 	"time"
 
 	mock "github.com/stretchr/testify/mock"
-	"github.com/the-new-day/protanki-wiki-admin/internal/mediawiki"
+	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
 )
 
 // NewMockWikiClient creates a new instance of MockWikiClient. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -40,22 +40,22 @@ func (_m *MockWikiClient) EXPECT() *MockWikiClient_Expecter {
 }
 
 // FetchEdit provides a mock function for the type MockWikiClient
-func (_mock *MockWikiClient) FetchEdit(ctx context.Context, title string, revID int64, locale string) (mediawiki.Edit, error) {
+func (_mock *MockWikiClient) FetchEdit(ctx context.Context, title string, revID int64, locale string) (entity.Edit, error) {
 	ret := _mock.Called(ctx, title, revID, locale)
 
 	if len(ret) == 0 {
 		panic("no return value specified for FetchEdit")
 	}
 
-	var r0 mediawiki.Edit
+	var r0 entity.Edit
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64, string) (mediawiki.Edit, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64, string) (entity.Edit, error)); ok {
 		return returnFunc(ctx, title, revID, locale)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64, string) mediawiki.Edit); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64, string) entity.Edit); ok {
 		r0 = returnFunc(ctx, title, revID, locale)
 	} else {
-		r0 = ret.Get(0).(mediawiki.Edit)
+		r0 = ret.Get(0).(entity.Edit)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int64, string) error); ok {
 		r1 = returnFunc(ctx, title, revID, locale)
@@ -107,34 +107,34 @@ func (_c *MockWikiClient_FetchEdit_Call) Run(run func(ctx context.Context, title
 	return _c
 }
 
-func (_c *MockWikiClient_FetchEdit_Call) Return(edit mediawiki.Edit, err error) *MockWikiClient_FetchEdit_Call {
+func (_c *MockWikiClient_FetchEdit_Call) Return(edit entity.Edit, err error) *MockWikiClient_FetchEdit_Call {
 	_c.Call.Return(edit, err)
 	return _c
 }
 
-func (_c *MockWikiClient_FetchEdit_Call) RunAndReturn(run func(ctx context.Context, title string, revID int64, locale string) (mediawiki.Edit, error)) *MockWikiClient_FetchEdit_Call {
+func (_c *MockWikiClient_FetchEdit_Call) RunAndReturn(run func(ctx context.Context, title string, revID int64, locale string) (entity.Edit, error)) *MockWikiClient_FetchEdit_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // FetchRecentChanges provides a mock function for the type MockWikiClient
-func (_mock *MockWikiClient) FetchRecentChanges(ctx context.Context, locale string, since time.Time, limit int) ([]mediawiki.RecentChange, error) {
+func (_mock *MockWikiClient) FetchRecentChanges(ctx context.Context, locale string, since time.Time, limit int) ([]entity.RecentChange, error) {
 	ret := _mock.Called(ctx, locale, since, limit)
 
 	if len(ret) == 0 {
 		panic("no return value specified for FetchRecentChanges")
 	}
 
-	var r0 []mediawiki.RecentChange
+	var r0 []entity.RecentChange
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time, int) ([]mediawiki.RecentChange, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time, int) ([]entity.RecentChange, error)); ok {
 		return returnFunc(ctx, locale, since, limit)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time, int) []mediawiki.RecentChange); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time, int) []entity.RecentChange); ok {
 		r0 = returnFunc(ctx, locale, since, limit)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]mediawiki.RecentChange)
+			r0 = ret.Get(0).([]entity.RecentChange)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string, time.Time, int) error); ok {
@@ -187,12 +187,12 @@ func (_c *MockWikiClient_FetchRecentChanges_Call) Run(run func(ctx context.Conte
 	return _c
 }
 
-func (_c *MockWikiClient_FetchRecentChanges_Call) Return(recentChanges []mediawiki.RecentChange, err error) *MockWikiClient_FetchRecentChanges_Call {
+func (_c *MockWikiClient_FetchRecentChanges_Call) Return(recentChanges []entity.RecentChange, err error) *MockWikiClient_FetchRecentChanges_Call {
 	_c.Call.Return(recentChanges, err)
 	return _c
 }
 
-func (_c *MockWikiClient_FetchRecentChanges_Call) RunAndReturn(run func(ctx context.Context, locale string, since time.Time, limit int) ([]mediawiki.RecentChange, error)) *MockWikiClient_FetchRecentChanges_Call {
+func (_c *MockWikiClient_FetchRecentChanges_Call) RunAndReturn(run func(ctx context.Context, locale string, since time.Time, limit int) ([]entity.RecentChange, error)) *MockWikiClient_FetchRecentChanges_Call {
 	_c.Call.Return(run)
 	return _c
 }

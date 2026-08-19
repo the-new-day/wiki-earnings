@@ -50,6 +50,18 @@ type Config struct {
 	// InitialLookback is how far back to start when a locale has no sync state yet.
 	InitialLookback time.Duration
 
+	// SyncMinInterval is how long a locale is left alone after a sync. Syncs
+	// are triggered per request, so without this every page load hits the wiki.
+	SyncMinInterval time.Duration
+
+	// SyncMaxDuration budgets one sync run, which happens inside a user
+	// request. Running out of it is not a failure, just a shorter run.
+	SyncMaxDuration time.Duration
+
+	// SyncConcurrency is how many edits are fetched in parallel. Each one costs
+	// three round trips to the wiki.
+	SyncConcurrency int
+
 	DeadLetterMaxAttempts int
 	DeadLetterBatchSize   int
 }
@@ -70,6 +82,9 @@ func Default() Config {
 		Locales:               []string{"ru", "ua", "en", "br"},
 		SyncBatchSize:         500,
 		InitialLookback:       30 * 24 * time.Hour,
+		SyncMinInterval:       time.Minute,
+		SyncMaxDuration:       20 * time.Second,
+		SyncConcurrency:       8,
 		DeadLetterMaxAttempts: 5,
 		DeadLetterBatchSize:   100,
 	}
@@ -98,6 +113,21 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if err = duration(&cfg.InitialLookback, "INITIAL_LOOKBACK"); err != nil {
+		return Config{}, err
+	}
+	if err = duration(&cfg.SyncMinInterval, "SYNC_MIN_INTERVAL"); err != nil {
+		return Config{}, err
+	}
+	if err = duration(&cfg.SyncMaxDuration, "SYNC_MAX_DURATION"); err != nil {
+		return Config{}, err
+	}
+	if err = intVar(&cfg.SyncConcurrency, "SYNC_CONCURRENCY"); err != nil {
+		return Config{}, err
+	}
+	if err = intVar(&cfg.DeadLetterMaxAttempts, "DEAD_LETTER_MAX_ATTEMPTS"); err != nil {
+		return Config{}, err
+	}
+	if err = intVar(&cfg.DeadLetterBatchSize, "DEAD_LETTER_BATCH_SIZE"); err != nil {
 		return Config{}, err
 	}
 

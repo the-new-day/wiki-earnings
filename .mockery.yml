@@ -11,3 +11,12 @@ packages:
       EditorReader: {}
       RevisionReader: {}
       Syncer: {}
+  github.com/the-new-day/protanki-wiki-admin/internal/sync:
+    interfaces:
+      WikiClient: {}
+      EditorRegistry: {}
+      RevisionWriter: {}
+      StateStore: {}
+      DeadLetter: {}
+      Pricer: {}
+      Locker: {}

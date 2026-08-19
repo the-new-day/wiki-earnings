@@ -5,6 +5,7 @@ import (
 	"log"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/the-new-day/protanki-wiki-admin/internal/config"
 	"github.com/the-new-day/protanki-wiki-admin/internal/domain/pricing"
@@ -65,11 +66,33 @@ func run() error {
 	)
 
 	earningsUC := earnings.New(editorRepo, revisionRepo, syncSvc)
-	_ = earningsUC // TODO: wire into HTTP handlers once the transport layer exists
+	_ = earningsUC // TODO: wire into handlers once the transport layer exists
 
-	// TODO: run syncSvc.Replay on a ticker once the transport layer exists.
+	replayDone := make(chan struct{})
+	go runReplayLoop(ctx, syncSvc, cfg.ReplayInterval, replayDone)
+
 	<-ctx.Done()
 	log.Println("shutting down")
+	<-replayDone
 
 	return nil
+}
+
+// runReplayLoop retries dead-lettered revisions on a schedule.
+func runReplayLoop(ctx context.Context, syncSvc *sync.Service, interval time.Duration, done chan<- struct{}) {
+	defer close(done)
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := syncSvc.Replay(ctx); err != nil {
+				log.Printf("replay: %v", err)
+			}
+		}
+	}
 }

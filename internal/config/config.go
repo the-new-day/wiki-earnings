@@ -64,6 +64,11 @@ type Config struct {
 
 	DeadLetterMaxAttempts int
 	DeadLetterBatchSize   int
+
+	// ReplayInterval is how often dead-lettered revisions are retried. Unlike
+	// Sync, Replay is not triggered by requests, so something has to call it
+	// on a schedule or failures pile up forever.
+	ReplayInterval time.Duration
 }
 
 func Default() Config {
@@ -87,6 +92,7 @@ func Default() Config {
 		SyncConcurrency:       8,
 		DeadLetterMaxAttempts: 5,
 		DeadLetterBatchSize:   100,
+		ReplayInterval:        5 * time.Minute,
 	}
 }
 
@@ -128,6 +134,9 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if err = intVar(&cfg.DeadLetterBatchSize, "DEAD_LETTER_BATCH_SIZE"); err != nil {
+		return Config{}, err
+	}
+	if err = duration(&cfg.ReplayInterval, "REPLAY_INTERVAL"); err != nil {
 		return Config{}, err
 	}
 

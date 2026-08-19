@@ -14,11 +14,6 @@ down:
 	docker compose down
 .PHONY: down
 
-seed:
-	docker compose --profile migrations run --rm migrator
-	docker compose --profile seed run --rm --build seed
-.PHONY: seed
-
 migrate-up:
 	docker compose --profile migrations run --rm migrator
 .PHONY: migrate-up

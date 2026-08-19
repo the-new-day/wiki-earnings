@@ -7,8 +7,7 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/app . && \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/seed ./cmd/seed
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/app .
 
 # ca-certificates is not optional: the app talks to the wiki over HTTPS.
 FROM alpine:3.21 AS runtime
@@ -19,7 +18,3 @@ USER app
 FROM runtime AS app
 COPY --from=build /out/app /usr/local/bin/app
 ENTRYPOINT ["app"]
-
-FROM runtime AS seed
-COPY --from=build /out/seed /usr/local/bin/seed
-ENTRYPOINT ["seed"]

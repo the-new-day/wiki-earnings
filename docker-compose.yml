@@ -16,8 +16,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-wiki}
     ports:
-      # Host port only, so a local psql can reach it without clashing with a
-      # postgres already running on 5432.
       - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -35,19 +33,12 @@ services:
       target: app
     environment:
       <<: *postgres-env
-      LOCALES: ${LOCALES:-ru,ua,en,br}
-      SYNC_BATCH_SIZE: ${SYNC_BATCH_SIZE:-500}
-      INITIAL_LOOKBACK: ${INITIAL_LOOKBACK:-720h}
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
 
-  # Run on demand, never as part of `up`: schema changes are a decision, not a
-  # side effect of starting the app.
-  #   docker compose --profile migrations run --rm migrator          # up
-  #   docker compose --profile migrations run --rm migrator down 1
-  #   docker compose --profile migrations run --rm migrator version
+  # Run on demand
   migrator:
     image: migrate/migrate:v4.18.1
     profiles: ["migrations"]

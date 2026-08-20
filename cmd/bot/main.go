@@ -13,6 +13,7 @@ import (
 	"github.com/the-new-day/protanki-wiki-admin/internal/storage/postgres"
 	"github.com/the-new-day/protanki-wiki-admin/internal/sync"
 	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings"
+	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
 )
 
 func main() {
@@ -66,7 +67,8 @@ func run() error {
 	)
 
 	earningsUC := earnings.New(editorRepo, revisionRepo, syncSvc)
-	_ = earningsUC // TODO: wire into handlers once the transport layer exists
+	revisionsUC := revisions.New(editorRepo, revisionRepo)
+	_, _ = earningsUC, revisionsUC // TODO: wire into handlers once the transport layer exists
 
 	replayDone := make(chan struct{})
 	go runReplayLoop(ctx, syncSvc, cfg.ReplayInterval, replayDone)

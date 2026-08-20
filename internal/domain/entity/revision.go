@@ -14,14 +14,15 @@ const (
 )
 
 type Revision struct {
-	RevID      int64        `db:"revision_id"`
-	Locale     string       `db:"locale"`
-	EditorID   int64        `db:"editor_id"`
-	PageID     int64        `db:"page_id"`
-	PageTitle  string       `db:"page_title"`
-	Type       RevisionType `db:"type"`
-	Comment    string       `db:"comment"`
-	Cost       int64        `db:"cost"`
-	EditedAt   time.Time    `db:"edited_at"`
-	ComputedAt time.Time    `db:"computed_at"`
+	RevID          int64
+	Locale         string
+	EditorID       int64
+	PageID         int64
+	PageTitle      string
+	Type           RevisionType
+	Comment        string
+	Cost           int64
+	EditedAt       time.Time
+	ComputedAt     time.Time
+	CostOverridden bool
 }

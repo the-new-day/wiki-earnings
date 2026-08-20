@@ -2,18 +2,23 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
+	"github.com/the-new-day/protanki-wiki-admin/internal/storage"
 	"github.com/the-new-day/protanki-wiki-admin/internal/sync"
 	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings"
+	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
 )
 
 var (
 	_ sync.RevisionWriter     = (*RevisionRepository)(nil)
 	_ earnings.RevisionReader = (*RevisionRepository)(nil)
+	_ revisions.RevisionStore = (*RevisionRepository)(nil)
 )
 
 type RevisionRepository struct {
@@ -27,7 +32,10 @@ func NewRevisionRepository(pool *pgxpool.Pool) *RevisionRepository {
 }
 
 // Upsert stores a priced revision, overwriting whatever was there. A replayed
-// batch re-prices the same revision, so this has to accept that without erroring.
+// batch re-prices the same revision, so this has to accept that without
+// erroring. cost is the exception: once an admin has overridden it, a fresh
+// computed price must not silently replace it.
+// TODO: move cost_overridden logic to usecase, it shouldn't be the repo's responsibility.
 func (repo *RevisionRepository) Upsert(ctx context.Context, r entity.Revision) error {
 	_, err := repo.pool.Exec(ctx, `
 		INSERT INTO revisions (revision_id, locale, editor_id, page_id, page_title, type, comment, cost, edited_at, computed_at)
@@ -38,7 +46,7 @@ func (repo *RevisionRepository) Upsert(ctx context.Context, r entity.Revision) e
 			page_title = EXCLUDED.page_title,
 			type = EXCLUDED.type,
 			comment = EXCLUDED.comment,
-			cost = EXCLUDED.cost,
+			cost = CASE WHEN revisions.cost_overridden THEN revisions.cost ELSE EXCLUDED.cost END,
 			edited_at = EXCLUDED.edited_at,
 			computed_at = EXCLUDED.computed_at`,
 		r.RevID, r.Locale, r.EditorID, r.PageID, r.PageTitle, r.Type, r.Comment, r.Cost, r.EditedAt, r.ComputedAt)
@@ -96,7 +104,7 @@ func (repo *RevisionRepository) SumCostForEditor(ctx context.Context, editorID i
 // ListByEditor lists one editor's revisions over a half-open period [from, to), oldest first.
 func (repo *RevisionRepository) ListByEditor(ctx context.Context, editorID int64, from, to time.Time) ([]entity.Revision, error) {
 	rows, err := repo.pool.Query(ctx, `
-		SELECT revision_id, locale, editor_id, page_id, page_title, type, comment, cost, edited_at, computed_at
+		SELECT revision_id, locale, editor_id, page_id, page_title, type, comment, cost, edited_at, computed_at, cost_overridden
 		FROM revisions
 		WHERE editor_id = $1 AND edited_at >= $2 AND edited_at < $3
 		ORDER BY edited_at`, editorID, from, to)
@@ -109,7 +117,7 @@ func (repo *RevisionRepository) ListByEditor(ctx context.Context, editorID int64
 	for rows.Next() {
 		var r entity.Revision
 		err := rows.Scan(&r.RevID, &r.Locale, &r.EditorID, &r.PageID, &r.PageTitle,
-			&r.Type, &r.Comment, &r.Cost, &r.EditedAt, &r.ComputedAt)
+			&r.Type, &r.Comment, &r.Cost, &r.EditedAt, &r.ComputedAt, &r.CostOverridden)
 		if err != nil {
 			return nil, fmt.Errorf("postgres: list revisions for editor %d: scan: %w", editorID, err)
 		}
@@ -120,4 +128,60 @@ func (repo *RevisionRepository) ListByEditor(ctx context.Context, editorID int64
 	}
 
 	return out, nil
+}
+
+// Get looks up a single revision.
+func (repo *RevisionRepository) Get(ctx context.Context, locale string, revisionID int64) (entity.Revision, error) {
+	var r entity.Revision
+	err := repo.pool.QueryRow(ctx, `
+		SELECT revision_id, locale, editor_id, page_id, page_title, type, comment, cost, edited_at, computed_at, cost_overridden
+		FROM revisions WHERE locale = $1 AND revision_id = $2`, locale, revisionID).
+		Scan(&r.RevID, &r.Locale, &r.EditorID, &r.PageID, &r.PageTitle, &r.Type, &r.Comment, &r.Cost, &r.EditedAt, &r.ComputedAt, &r.CostOverridden)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return entity.Revision{}, fmt.Errorf("postgres: get revision %s/%d: %w", locale, revisionID, storage.ErrNotFound)
+	}
+	if err != nil {
+		return entity.Revision{}, fmt.Errorf("postgres: get revision %s/%d: %w", locale, revisionID, err)
+	}
+
+	return r, nil
+}
+
+// OverrideCost sets a revision's price by hand and logs the change: who made
+// it, when, and what the price was before. A later resync re-prices and
+// overwrites the row in revisions, but the log entry stands regardless.
+func (repo *RevisionRepository) OverrideCost(ctx context.Context, locale string, revisionID int64, newCost int64, changedBy string) (entity.Revision, error) {
+	var r entity.Revision
+	var oldCost int64
+
+	err := pgx.BeginFunc(ctx, repo.pool, func(tx pgx.Tx) error {
+		err := tx.QueryRow(ctx, `
+			SELECT revision_id, locale, editor_id, page_id, page_title, type, comment, cost, edited_at, computed_at
+			FROM revisions WHERE locale = $1 AND revision_id = $2 FOR UPDATE`, locale, revisionID).
+			Scan(&r.RevID, &r.Locale, &r.EditorID, &r.PageID, &r.PageTitle, &r.Type, &r.Comment, &oldCost, &r.EditedAt, &r.ComputedAt)
+		if err != nil {
+			return err
+		}
+
+		if _, err := tx.Exec(ctx, `
+			UPDATE revisions SET cost = $1, cost_overridden = true WHERE locale = $2 AND revision_id = $3`,
+			newCost, locale, revisionID); err != nil {
+			return err
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO revision_price_overrides (locale, revision_id, old_cost, new_cost, changed_by)
+			VALUES ($1, $2, $3, $4, $5)`, locale, revisionID, oldCost, newCost, changedBy)
+		return err
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return entity.Revision{}, fmt.Errorf("postgres: override cost %s/%d: %w", locale, revisionID, storage.ErrNotFound)
+	}
+	if err != nil {
+		return entity.Revision{}, fmt.Errorf("postgres: override cost %s/%d: %w", locale, revisionID, err)
+	}
+
+	r.Cost = newCost
+	r.CostOverridden = true
+	return r, nil
 }

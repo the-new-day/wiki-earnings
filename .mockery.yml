@@ -11,6 +11,10 @@ packages:
       EditorReader: {}
       RevisionReader: {}
       Syncer: {}
+  github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions:
+    interfaces:
+      EditorReader: {}
+      RevisionStore: {}
   github.com/the-new-day/protanki-wiki-admin/internal/sync:
     interfaces:
       WikiClient: {}

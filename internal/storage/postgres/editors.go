@@ -11,11 +11,13 @@ import (
 	"github.com/the-new-day/protanki-wiki-admin/internal/storage"
 	"github.com/the-new-day/protanki-wiki-admin/internal/sync"
 	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings"
+	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
 )
 
 var (
-	_ sync.EditorRegistry   = (*EditorRepository)(nil)
-	_ earnings.EditorReader = (*EditorRepository)(nil)
+	_ sync.EditorRegistry    = (*EditorRepository)(nil)
+	_ earnings.EditorReader  = (*EditorRepository)(nil)
+	_ revisions.EditorReader = (*EditorRepository)(nil)
 )
 
 type EditorRepository struct {
@@ -114,4 +116,28 @@ func (repo *EditorRepository) Rename(ctx context.Context, editorID int64, nickna
 	}
 
 	return nil
+}
+
+// Locales lists the wikis an editor has an account on.
+func (repo *EditorRepository) Locales(ctx context.Context, editorID int64) ([]string, error) {
+	rows, err := repo.pool.Query(ctx, `
+		SELECT locale FROM editor_accounts WHERE editor_id = $1 ORDER BY locale`, editorID)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: locales for editor %d: %w", editorID, err)
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var locale string
+		if err := rows.Scan(&locale); err != nil {
+			return nil, fmt.Errorf("postgres: locales for editor %d: scan: %w", editorID, err)
+		}
+		out = append(out, locale)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: locales for editor %d: %w", editorID, err)
+	}
+
+	return out, nil
 }

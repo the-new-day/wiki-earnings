@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/the-new-day/protanki-wiki-admin/internal/config"
+	"github.com/the-new-day/protanki-wiki-admin/internal/delivery/discord"
 	"github.com/the-new-day/protanki-wiki-admin/internal/domain/pricing"
 	"github.com/the-new-day/protanki-wiki-admin/internal/mediawiki"
 	"github.com/the-new-day/protanki-wiki-admin/internal/storage/postgres"
@@ -70,12 +71,28 @@ func run() error {
 	revisionsUC := revisions.New(editorRepo, revisionRepo)
 	_, _ = earningsUC, revisionsUC // TODO: wire into handlers once the transport layer exists
 
+	bot, err := discord.New(cfg.DiscordBotToken)
+	if err != nil {
+		return err
+	}
+
 	replayDone := make(chan struct{})
 	go runReplayLoop(ctx, syncSvc, cfg.ReplayInterval, replayDone)
+
+	botDone := make(chan error, 1)
+	go func() {
+		log.Print("discord bot started")
+		botDone <- bot.Run(ctx)
+		log.Print("discord bot shutted down")
+	}()
 
 	<-ctx.Done()
 	log.Println("shutting down")
 	<-replayDone
+
+	if err := <-botDone; err != nil {
+		return err
+	}
 
 	return nil
 }

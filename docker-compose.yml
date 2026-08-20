@@ -33,6 +33,7 @@ services:
       target: app
     environment:
       <<: *postgres-env
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
     depends_on:
       postgres:
         condition: service_healthy

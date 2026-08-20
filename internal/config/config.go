@@ -40,8 +40,9 @@ func (p Postgres) DSN() string {
 }
 
 type Config struct {
-	Postgres Postgres
-	Locales  []string
+	Postgres        Postgres
+	DiscordBotToken string
+	Locales         []string
 
 	// SyncBatchSize is how many recent changes to ask for at once.
 	// MediaWiki caps rclimit at 500 for regular users.
@@ -103,6 +104,7 @@ func Load() (Config, error) {
 	cfg := Default()
 
 	var err error
+	str(&cfg.DiscordBotToken, "DISCORD_BOT_TOKEN")
 	str(&cfg.Postgres.Host, "POSTGRES_HOST")
 	str(&cfg.Postgres.User, "POSTGRES_USER")
 	str(&cfg.Postgres.Password, "POSTGRES_PASSWORD")
@@ -154,6 +156,10 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("config: POSTGRES_MAX_CONNS=%q: %w", v, err)
 		}
 		cfg.Postgres.MaxConns = int32(n)
+	}
+
+	if cfg.DiscordBotToken == "" {
+		return Config{}, fmt.Errorf("config: DISCORD_BOT_TOKEN not set")
 	}
 
 	return cfg, nil

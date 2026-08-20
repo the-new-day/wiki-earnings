@@ -69,9 +69,8 @@ func run() error {
 
 	earningsUC := earnings.New(editorRepo, revisionRepo, syncSvc)
 	revisionsUC := revisions.New(editorRepo, revisionRepo)
-	_, _ = earningsUC, revisionsUC // TODO: wire into handlers once the transport layer exists
 
-	bot, err := discord.New(cfg.DiscordBotToken)
+	bot, err := discord.New(cfg.DiscordBotToken, earningsUC, revisionsUC, cfg.WikiRoleID, cfg.WikiAdminRoleID)
 	if err != nil {
 		return err
 	}
@@ -81,9 +80,7 @@ func run() error {
 
 	botDone := make(chan error, 1)
 	go func() {
-		log.Print("discord bot started")
 		botDone <- bot.Run(ctx)
-		log.Print("discord bot shutted down")
 	}()
 
 	<-ctx.Done()

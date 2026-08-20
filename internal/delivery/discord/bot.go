@@ -6,21 +6,62 @@ import (
 	"log"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings"
+	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
 )
 
 var commands = []*discordgo.ApplicationCommand{
 	{
-		Name:        "hello",
-		Description: "Says hello!",
+		Name:        "wheelchair",
+		Description: "Wheelchair",
+	},
+	{
+		Name:        "salary",
+		Description: "Editor's salary per month",
+		Options: []*discordgo.ApplicationCommandOption{
+			{Type: discordgo.ApplicationCommandOptionString, Name: "nickname", Description: "Editor's nickname on the Wiki", Required: true},
+			{Type: discordgo.ApplicationCommandOptionString, Name: "month", Description: "Month in YYYY-MM format, current by default"},
+		},
+	},
+	{
+		Name:        "edits",
+		Description: "A detailed report on the editor's edits for the month",
+		Options: []*discordgo.ApplicationCommandOption{
+			{Type: discordgo.ApplicationCommandOptionString, Name: "nickname", Description: "Editor's nickname on the Wiki", Required: true},
+			{Type: discordgo.ApplicationCommandOptionString, Name: "month", Description: "Month in YYYY-MM format, current by default"},
+		},
+	},
+	{
+		Name:        "report",
+		Description: "Full report on all editors for the month",
+		Options: []*discordgo.ApplicationCommandOption{
+			{Type: discordgo.ApplicationCommandOptionString, Name: "month", Description: "Month in YYYY-MM format, current by default"},
+		},
+	},
+	{
+		Name:        "changepay",
+		Description: "Manually change the editing cost",
+		Options: []*discordgo.ApplicationCommandOption{
+			{Type: discordgo.ApplicationCommandOptionString, Name: "nickname", Description: "Editor's nickname on the Wiki", Required: true},
+			{Type: discordgo.ApplicationCommandOptionInteger, Name: "edit_id", Description: "Editing ID", Required: true},
+			{Type: discordgo.ApplicationCommandOptionInteger, Name: "new_cost", Description: "New editing cost", Required: true},
+			{Type: discordgo.ApplicationCommandOptionString, Name: "locale", Description: "Wiki locale (needed if the editor has multiple accounts)"},
+		},
 	},
 }
 
 type Bot struct {
 	session *discordgo.Session
+
+	earnings  *earnings.UseCase
+	revisions *revisions.UseCase
+
+	wikiRoleID      string
+	wikiAdminRoleID string
 }
 
 // New creates a session and wires up handlers. It doesn't connect yet — call Run for that.
-func New(token string) (*Bot, error) {
+func New(token string, earningsUC *earnings.UseCase, revisionsUC *revisions.UseCase, wikiRoleID, wikiAdminRoleID string) (*Bot, error) {
 	session, err := discordgo.New("Bot " + token)
 	if err != nil {
 		return nil, fmt.Errorf("discord: new session: %w", err)
@@ -28,7 +69,13 @@ func New(token string) (*Bot, error) {
 
 	session.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsMessageContent
 
-	bot := &Bot{session: session}
+	bot := &Bot{
+		session:         session,
+		earnings:        earningsUC,
+		revisions:       revisionsUC,
+		wikiRoleID:      wikiRoleID,
+		wikiAdminRoleID: wikiAdminRoleID,
+	}
 	session.AddHandler(bot.handleReady)
 	session.AddHandler(bot.handleInteractionCreate)
 	session.AddHandler(bot.handleMessageCreate)
@@ -63,26 +110,6 @@ func (b *Bot) Run(ctx context.Context) error {
 
 func (b *Bot) handleReady(s *discordgo.Session, r *discordgo.Ready) {
 	log.Printf("discord: logged in as %s", r.User.String())
-}
-
-func (b *Bot) handleInteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	if i.Type != discordgo.InteractionApplicationCommand {
-		return
-	}
-
-	if i.ApplicationCommandData().Name != "hello" {
-		return
-	}
-
-	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: "Hello World!",
-		},
-	})
-	if err != nil {
-		log.Printf("discord: respond to /hello: %v", err)
-	}
 }
 
 // handleMessageCreate logs every non-bot message to the console. It ignores

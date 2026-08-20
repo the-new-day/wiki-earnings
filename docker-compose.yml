@@ -34,6 +34,8 @@ services:
     environment:
       <<: *postgres-env
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
+      WIKI_ROLE_ID: ${WIKI_ROLE_ID}
+      WIKI_ADMIN_ROLE_ID: ${WIKI_ADMIN_ROLE_ID}
     depends_on:
       postgres:
         condition: service_healthy

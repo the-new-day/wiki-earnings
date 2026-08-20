@@ -42,7 +42,13 @@ func (p Postgres) DSN() string {
 type Config struct {
 	Postgres        Postgres
 	DiscordBotToken string
-	Locales         []string
+
+	// WikiRoleID and WikiAdminRoleID gate the bot's slash commands. Wiki Admin
+	// implicitly has Wiki access too.
+	WikiRoleID      string
+	WikiAdminRoleID string
+
+	Locales []string
 
 	// SyncBatchSize is how many recent changes to ask for at once.
 	// MediaWiki caps rclimit at 500 for regular users.
@@ -105,6 +111,8 @@ func Load() (Config, error) {
 
 	var err error
 	str(&cfg.DiscordBotToken, "DISCORD_BOT_TOKEN")
+	str(&cfg.WikiRoleID, "WIKI_ROLE_ID")
+	str(&cfg.WikiAdminRoleID, "WIKI_ADMIN_ROLE_ID")
 	str(&cfg.Postgres.Host, "POSTGRES_HOST")
 	str(&cfg.Postgres.User, "POSTGRES_USER")
 	str(&cfg.Postgres.Password, "POSTGRES_PASSWORD")
@@ -160,6 +168,12 @@ func Load() (Config, error) {
 
 	if cfg.DiscordBotToken == "" {
 		return Config{}, fmt.Errorf("config: DISCORD_BOT_TOKEN not set")
+	}
+	if cfg.WikiRoleID == "" {
+		return Config{}, fmt.Errorf("config: WIKI_ROLE_ID not set")
+	}
+	if cfg.WikiAdminRoleID == "" {
+		return Config{}, fmt.Errorf("config: WIKI_ADMIN_ROLE_ID not set")
 	}
 
 	return cfg, nil

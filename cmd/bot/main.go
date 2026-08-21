@@ -14,6 +14,7 @@ import (
 	"github.com/the-new-day/protanki-wiki-admin/internal/storage/postgres"
 	"github.com/the-new-day/protanki-wiki-admin/internal/sync"
 	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings"
+	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/resync"
 	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
 )
 
@@ -69,8 +70,9 @@ func run() error {
 
 	earningsUC := earnings.New(editorRepo, revisionRepo, syncSvc)
 	revisionsUC := revisions.New(editorRepo, revisionRepo)
+	resyncUC := resync.New(syncStateRepo, deadLetterRepo, syncSvc, cfg.Locales)
 
-	bot, err := discord.New(cfg.DiscordBotToken, earningsUC, revisionsUC, cfg.WikiRoleID, cfg.WikiAdminRoleID)
+	bot, err := discord.New(cfg.DiscordBotToken, earningsUC, revisionsUC, resyncUC, cfg.WikiRoleID, cfg.WikiAdminRoleID)
 	if err != nil {
 		return err
 	}

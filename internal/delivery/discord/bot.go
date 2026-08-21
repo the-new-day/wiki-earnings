@@ -7,6 +7,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings"
+	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/resync"
 	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
 )
 
@@ -21,13 +22,20 @@ type Bot struct {
 
 	earnings  *earnings.UseCase
 	revisions *revisions.UseCase
+	resync    *resync.UseCase
 
 	wikiRoleID      string
 	wikiAdminRoleID string
 }
 
 // New creates a session and wires up handlers. It doesn't connect yet — call Run for that.
-func New(token string, earningsUC *earnings.UseCase, revisionsUC *revisions.UseCase, wikiRoleID, wikiAdminRoleID string) (*Bot, error) {
+func New(
+	token string,
+	earningsUC *earnings.UseCase,
+	revisionsUC *revisions.UseCase,
+	resyncUC *resync.UseCase,
+	wikiRoleID, wikiAdminRoleID string,
+) (*Bot, error) {
 	session, err := discordgo.New("Bot " + token)
 	if err != nil {
 		return nil, fmt.Errorf("discord: new session: %w", err)
@@ -39,6 +47,7 @@ func New(token string, earningsUC *earnings.UseCase, revisionsUC *revisions.UseC
 		session:         session,
 		earnings:        earningsUC,
 		revisions:       revisionsUC,
+		resync:          resyncUC,
 		wikiRoleID:      wikiRoleID,
 		wikiAdminRoleID: wikiAdminRoleID,
 	}
@@ -168,6 +177,10 @@ func registerCommands() {
 					Description: "Wiki locale (needed if the editor has multiple accounts)",
 				},
 			},
+		},
+		{
+			Name:        "resync",
+			Description: "Reload all edits from the Wiki and recalculate payments.",
 		},
 		{
 			Name:        "commands",

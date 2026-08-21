@@ -7,9 +7,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
 	"github.com/the-new-day/protanki-wiki-admin/internal/sync"
+	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/resync"
 )
 
-var _ sync.DeadLetter = (*DeadLetterRepository)(nil)
+var (
+	_ sync.DeadLetter   = (*DeadLetterRepository)(nil)
+	_ resync.DeadLetter = (*DeadLetterRepository)(nil)
+)
 
 type DeadLetterRepository struct {
 	pool *pgxpool.Pool
@@ -91,6 +95,17 @@ func (repo *DeadLetterRepository) Retire(ctx context.Context, locale string, rev
 		WHERE locale = $2 AND revision_id = $3`, reason, locale, revID)
 	if err != nil {
 		return fmt.Errorf("postgres: retire %s/%d: %w", locale, revID, err)
+	}
+
+	return nil
+}
+
+// Clear drops every dead-lettered entry for a locale, so a resync starts with
+// a clean slate instead of carrying forward stale failure records.
+func (repo *DeadLetterRepository) Clear(ctx context.Context, locale string) error {
+	_, err := repo.pool.Exec(ctx, `DELETE FROM failed_revisions WHERE locale = $1`, locale)
+	if err != nil {
+		return fmt.Errorf("postgres: clear dead letters %s: %w", locale, err)
 	}
 
 	return nil

@@ -9,9 +9,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
 	"github.com/the-new-day/protanki-wiki-admin/internal/sync"
+	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/resync"
 )
 
-var _ sync.StateStore = (*SyncStateRepository)(nil)
+var (
+	_ sync.StateStore   = (*SyncStateRepository)(nil)
+	_ resync.StateStore = (*SyncStateRepository)(nil)
+)
 
 type SyncStateRepository struct {
 	pool *pgxpool.Pool
@@ -38,6 +42,17 @@ func (repo *SyncStateRepository) Get(ctx context.Context, locale string) (entity
 	}
 
 	return s, nil
+}
+
+// Reset drops the stored cursor for a locale, so the next Get sees it as
+// never synced and Sync starts over from InitialLookback.
+func (repo *SyncStateRepository) Reset(ctx context.Context, locale string) error {
+	_, err := repo.pool.Exec(ctx, `DELETE FROM sync_state WHERE locale = $1`, locale)
+	if err != nil {
+		return fmt.Errorf("postgres: reset sync state %s: %w", locale, err)
+	}
+
+	return nil
 }
 
 func (repo *SyncStateRepository) Save(ctx context.Context, s entity.SyncState) error {

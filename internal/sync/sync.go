@@ -114,7 +114,7 @@ const (
 	defaultBatchSize       = 500
 	defaultInitialLookback = 30 * 24 * time.Hour
 	defaultMinInterval     = time.Minute
-	defaultMaxDuration     = 20 * time.Second
+	defaultMaxDuration     = time.Minute
 	defaultConcurrency     = 8
 	defaultMaxAttempts     = 5
 	defaultReplayBatchSize = 100

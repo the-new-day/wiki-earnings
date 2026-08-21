@@ -43,11 +43,11 @@ func (b *Bot) handleInteractionCreate(s *discordgo.Session, i *discordgo.Interac
 	case "report":
 		b.runGated(s, i, data, []string{b.wikiAdminRoleID}, false, b.handleReport)
 	case "changepay":
-		// Its result can carry a locale-required nudge meant for the caller
-		// only, so the whole exchange stays ephemeral.
 		b.runGated(s, i, data, []string{b.wikiAdminRoleID}, true, b.handleChangePay)
 	case "commands":
 		b.runGated(s, i, data, []string{b.wikiAdminRoleID}, false, b.handleCommands)
+	case "resync":
+		b.runGated(s, i, data, []string{b.wikiAdminRoleID}, true, b.handleResync)
 	}
 }
 
@@ -224,6 +224,18 @@ func (b *Bot) handleChangePay(
 	return fmt.Sprintf("Cost changed to %d.", newCost), nil
 }
 
+func (b *Bot) handleResync(
+	ctx context.Context,
+	i *discordgo.InteractionCreate,
+	data discordgo.ApplicationCommandInteractionData,
+) (string, error) {
+	if err := b.resync.Resync(ctx); err != nil {
+		return "", err
+	}
+
+	return "Resync done.", nil
+}
+
 func (b *Bot) handleCommands(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
@@ -384,7 +396,7 @@ func (b *Bot) editReplyError(s *discordgo.Session, i *discordgo.InteractionCreat
 	case errors.Is(err, storage.ErrNotFound):
 		b.editReplyText(s, i, "The editor or the edit not found.")
 	default:
-		log.Printf("discord: edit reply: %w", err)
+		log.Printf("discord: edit reply: %v", err)
 		b.editReplyText(s, i, "Something went wrong. Please let the nearest nerd know.")
 	}
 }

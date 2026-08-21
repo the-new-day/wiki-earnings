@@ -17,6 +17,7 @@ import (
 	"github.com/the-new-day/protanki-wiki-admin/internal/storage/postgres"
 	"github.com/the-new-day/protanki-wiki-admin/internal/sync"
 	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings"
+	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/resync"
 	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
 )
 
@@ -72,6 +73,7 @@ func run() error {
 
 	earningsUC := earnings.New(editorRepo, revisionRepo, syncSvc)
 	revisionsUC := revisions.New(editorRepo, revisionRepo)
+	resyncUC := resync.New(syncStateRepo, deadLetterRepo, syncSvc, cfg.Locales)
 
 	fmt.Println("connected. commands:")
 	fmt.Println("  salary <nickname> [month=YYYY-MM]   (syncs first)")
@@ -80,6 +82,7 @@ func run() error {
 	fmt.Println("  changepay <nickname> <edit_id> <new_cost> [locale]")
 	fmt.Println("  sync                                (run sync directly)")
 	fmt.Println("  replay                              (retry dead-lettered revisions)")
+	fmt.Println("  resync                              (wipe sync state + dead letters, sync from scratch)")
 	fmt.Println("  quit")
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -99,7 +102,7 @@ func run() error {
 			return nil
 		}
 
-		result, err := dispatch(ctx, earningsUC, revisionsUC, syncSvc, cmd, args)
+		result, err := dispatch(ctx, earningsUC, revisionsUC, resyncUC, syncSvc, cmd, args)
 		if err != nil {
 			fmt.Println("error:", err)
 			continue
@@ -113,6 +116,7 @@ func dispatch(
 	ctx context.Context,
 	earningsUC *earnings.UseCase,
 	revisionsUC *revisions.UseCase,
+	resyncUC *resync.UseCase,
 	syncSvc *sync.Service,
 	cmd string,
 	args []string,
@@ -131,6 +135,13 @@ func dispatch(
 		}
 
 		return "replay ok", nil
+
+	case "resync":
+		if err := resyncUC.Resync(ctx); err != nil {
+			return nil, err
+		}
+
+		return "resync ok", nil
 
 	case "salary":
 		if len(args) < 1 {

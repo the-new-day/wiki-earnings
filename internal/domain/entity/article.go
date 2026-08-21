@@ -18,4 +18,5 @@ type ArticleInfo struct {
 	Images     []string
 	Sections   []Section
 	Templates  []string
+	Wikitext   string
 }

@@ -6,11 +6,9 @@ import (
 
 const (
 	DefaultLinkDensityWeight = 2
-	DefaultLinkDensityCap    = 4.0
+	DefaultLinkDensityCap    = 8.0
 
-	// Short articles are not expected to link anywhere, so they are not judged
-	// on it either.
-	linkDensityWordCountThreshold = 500
+	linkDensityWordCountThreshold = 150
 )
 
 type LinkDensity struct {

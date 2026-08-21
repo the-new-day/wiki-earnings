@@ -87,8 +87,8 @@ func (b *Bot) handleReady(s *discordgo.Session, r *discordgo.Ready) {
 	log.Printf("discord: logged in as %s", r.User.String())
 }
 
-// handleMessageCreate logs every non-bot message to the console. It ignores
-// the bot's own messages so replies don't loop back into the log as noise.
+// handleMessageCreate logs every non-bot message to the console.
+// Ignores the bot's own messages.
 func (b *Bot) handleMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.Bot {
 		return
@@ -180,7 +180,7 @@ func registerCommands() {
 		},
 		{
 			Name:        "resync",
-			Description: "Reload all edits from the Wiki and recalculate payments.",
+			Description: "Reload all edits from the Wiki and recalculate payments",
 		},
 		{
 			Name:        "commands",

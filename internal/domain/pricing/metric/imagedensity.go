@@ -6,9 +6,9 @@ import (
 
 const (
 	DefaultImageDensityWeight = 1
-	DefaultImageDensityCap    = 0.2
+	DefaultImageDensityCap    = 5.0
 
-	imageDensityWordCountThreshold = 300
+	imageDensityWordCountThreshold = 100
 )
 
 type ImageDensity struct {

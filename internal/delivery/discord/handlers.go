@@ -2,8 +2,6 @@ package discord
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -14,8 +12,6 @@ import (
 	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
 	"github.com/the-new-day/protanki-wiki-admin/internal/domain/pricing"
 	"github.com/the-new-day/protanki-wiki-admin/internal/mediawiki"
-	"github.com/the-new-day/protanki-wiki-admin/internal/storage"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
 )
 
 const monthLayout = "2006-01"
@@ -39,7 +35,7 @@ func (b *Bot) handleInteractionCreate(s *discordgo.Session, i *discordgo.Interac
 	case "salary":
 		b.runGated(s, i, data, []string{b.wikiRoleID, b.wikiAdminRoleID}, true, b.handleSalary)
 	case "edits":
-		b.runGated(s, i, data, []string{b.wikiRoleID, b.wikiAdminRoleID}, true, b.handleEdits)
+		b.runGated(s, i, data, []string{b.wikiRoleID, b.wikiAdminRoleID}, false, b.handleEdits)
 	case "report":
 		b.runGated(s, i, data, []string{b.wikiAdminRoleID}, false, b.handleReport)
 	case "changepay":
@@ -106,7 +102,7 @@ func (b *Bot) handleSalary(
 
 	if payslip.SyncErr != nil {
 		log.Printf("sync err: %s", payslip.SyncErr)
-		return fmt.Sprintf("%s\n\n:warning: Wiki Sync error, results may be out of date.", result), nil
+		return fmt.Sprintf("%s\n:warning: Wiki Sync error, results may be out of date.", result), nil
 	}
 
 	return result, nil
@@ -138,7 +134,7 @@ func (b *Bot) handleEdits(
 		}
 
 		// example:
-		// * [2026-08-20] ((NA)): [Main Page](<https://wiki.pro-tanki.online/en/Main_Page>)
+		// * [2026-08-20|13052] ((NA)): [Main Page](<https://wiki.pro-tanki.online/en/Main_Page>)
 		//   10 310 💎 (changed)
 		costChanged := ""
 		if rev.CostOverridden {
@@ -146,9 +142,10 @@ func (b *Bot) handleEdits(
 		}
 
 		fmt.Fprintf(&body,
-			"* [%s] %s: [%s](<%s%s/%s>)\n  %d 💎 %s\n",
-			rev.EditedAt.Format(dayLayout), revTypeToString(rev.Type),
-			rev.PageTitle, mediawiki.WikiUrl, rev.Locale, rev.PageTitle, rev.Cost, costChanged,
+			"* [%s|%d] %s: [%s](<%s%s/%s>)\n  %d 💎 %s\n",
+			rev.EditedAt.Format(dayLayout), rev.RevID, revTypeToString(rev.Type),
+			rev.PageTitle, mediawiki.WikiUrl, rev.Locale, strings.ReplaceAll(rev.PageTitle, " ", "_"),
+			rev.Cost, costChanged,
 		)
 	}
 
@@ -160,7 +157,7 @@ func (b *Bot) handleEdits(
 
 	if payslip.SyncErr != nil {
 		log.Printf("sync err: %s", payslip.SyncErr)
-		return fmt.Sprintf("%s\n\n:warning: Wiki Sync error, results may be out of date.", result.String()), nil
+		return fmt.Sprintf("%s\n:warning: Wiki Sync error, results may be out of date.", result.String()), nil
 	}
 
 	return result.String(), nil
@@ -199,7 +196,7 @@ func (b *Bot) handleReport(
 
 	if report.SyncErr != nil {
 		log.Printf("sync err: %s", report.SyncErr)
-		return fmt.Sprintf("%s\n\n:warning: Wiki Sync error, results may be out of date.", result.String()), nil
+		return fmt.Sprintf("%s\n:warning: Wiki Sync error, results may be out of date.", result.String()), nil
 	}
 
 	return result.String(), nil
@@ -329,76 +326,6 @@ func optionalBool(data discordgo.ApplicationCommandInteractionData, name string)
 	}
 
 	return opt.BoolValue()
-}
-
-func (b *Bot) replyText(s *discordgo.Session, i *discordgo.InteractionCreate, content string) {
-	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{Content: content},
-	})
-	if err != nil {
-		log.Printf("discord: reply: %v", err)
-	}
-}
-
-func (b *Bot) replyTextEphemeral(s *discordgo.Session, i *discordgo.InteractionCreate, content string) {
-	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: content,
-			Flags:   discordgo.MessageFlagsEphemeral,
-		},
-	})
-	if err != nil {
-		log.Printf("discord: reply ephemeral: %v", err)
-	}
-}
-
-// deferReply acknowledges the interaction immediately with a "thinking..."
-// placeholder, buying up to 15 minutes to edit in the real response instead
-// of the default 3 seconds.
-func (b *Bot) deferReply(s *discordgo.Session, i *discordgo.InteractionCreate, ephemeral bool) bool {
-	resp := &discordgo.InteractionResponse{Type: discordgo.InteractionResponseDeferredChannelMessageWithSource}
-	if ephemeral {
-		resp.Data = &discordgo.InteractionResponseData{Flags: discordgo.MessageFlagsEphemeral}
-	}
-
-	if err := s.InteractionRespond(i.Interaction, resp); err != nil {
-		log.Printf("discord: defer: %v", err)
-		return false
-	}
-
-	return true
-}
-
-func (b *Bot) editReplyText(s *discordgo.Session, i *discordgo.InteractionCreate, content string) {
-	_, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
-	if err != nil {
-		b.editReplyError(s, i, err)
-	}
-}
-
-// editReplyJSON dumps v as a raw JSON code block.
-func (b *Bot) editReplyJSON(s *discordgo.Session, i *discordgo.InteractionCreate, v any) {
-	encoded, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		b.editReplyError(s, i, err)
-		return
-	}
-
-	b.editReplyText(s, i, fmt.Sprintf("```json\n%s\n```", encoded))
-}
-
-func (b *Bot) editReplyError(s *discordgo.Session, i *discordgo.InteractionCreate, err error) {
-	switch {
-	case errors.Is(err, revisions.ErrLocaleRequired):
-		b.editReplyText(s, i, fmt.Sprintf("%v. Specify the locale and repeat the command.", err))
-	case errors.Is(err, storage.ErrNotFound):
-		b.editReplyText(s, i, "The editor or the edit not found.")
-	default:
-		log.Printf("discord: edit reply: %v", err)
-		b.editReplyText(s, i, "Something went wrong. Please let the nearest nerd know.")
-	}
 }
 
 func monthToText(timestamp time.Time) string {

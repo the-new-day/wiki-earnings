@@ -10,44 +10,10 @@ import (
 	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
 )
 
-var commands = []*discordgo.ApplicationCommand{
-	{
-		Name:        "wheelchair",
-		Description: "Wheelchair",
-	},
-	{
-		Name:        "salary",
-		Description: "Editor's salary per month",
-		Options: []*discordgo.ApplicationCommandOption{
-			{Type: discordgo.ApplicationCommandOptionString, Name: "nickname", Description: "Editor's nickname on the Wiki", Required: true},
-			{Type: discordgo.ApplicationCommandOptionString, Name: "month", Description: "Month in YYYY-MM format, current by default"},
-		},
-	},
-	{
-		Name:        "edits",
-		Description: "A detailed report on the editor's edits for the month",
-		Options: []*discordgo.ApplicationCommandOption{
-			{Type: discordgo.ApplicationCommandOptionString, Name: "nickname", Description: "Editor's nickname on the Wiki", Required: true},
-			{Type: discordgo.ApplicationCommandOptionString, Name: "month", Description: "Month in YYYY-MM format, current by default"},
-		},
-	},
-	{
-		Name:        "report",
-		Description: "Full report on all editors for the month",
-		Options: []*discordgo.ApplicationCommandOption{
-			{Type: discordgo.ApplicationCommandOptionString, Name: "month", Description: "Month in YYYY-MM format, current by default"},
-		},
-	},
-	{
-		Name:        "changepay",
-		Description: "Manually change the editing cost",
-		Options: []*discordgo.ApplicationCommandOption{
-			{Type: discordgo.ApplicationCommandOptionString, Name: "nickname", Description: "Editor's nickname on the Wiki", Required: true},
-			{Type: discordgo.ApplicationCommandOptionInteger, Name: "edit_id", Description: "Editing ID", Required: true},
-			{Type: discordgo.ApplicationCommandOptionInteger, Name: "new_cost", Description: "New editing cost", Required: true},
-			{Type: discordgo.ApplicationCommandOptionString, Name: "locale", Description: "Wiki locale (needed if the editor has multiple accounts)"},
-		},
-	},
+var commands = []*discordgo.ApplicationCommand{}
+
+func init() {
+	registerCommands()
 }
 
 type Bot struct {
@@ -120,4 +86,99 @@ func (b *Bot) handleMessageCreate(s *discordgo.Session, m *discordgo.MessageCrea
 	}
 
 	log.Printf("discord: [%s] %s: %s", m.ChannelID, m.Author.Username, m.Content)
+}
+
+func registerCommands() {
+	commands = []*discordgo.ApplicationCommand{
+		{
+			Name:        "salary",
+			Description: "Editor's salary per month",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "nickname",
+					Description: "Editor's nickname on the Wiki",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "month",
+					Description: "Month in YYYY-MM format, current by default",
+				},
+			},
+		},
+		{
+			Name:        "edits",
+			Description: "A detailed report on the editor's edits for the month",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "nickname",
+					Description: "Editor's nickname on the Wiki",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionBoolean,
+					Name:        "show_minor",
+					Description: "Show ((ME)) and ((IA)) edits",
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "month",
+					Description: "Month in YYYY-MM format, current by default",
+				},
+			},
+		},
+		{
+			Name:        "report",
+			Description: "Full report on all editors for the month",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "month",
+					Description: "Month in YYYY-MM format, current by default",
+				},
+			},
+		},
+		{
+			Name:        "changepay",
+			Description: "Manually change the editing cost",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "nickname",
+					Description: "Editor's nickname on the Wiki",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionInteger,
+					Name:        "edit_id",
+					Description: "Editing ID",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionInteger,
+					Name:        "new_cost",
+					Description: "New editing cost",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "locale",
+					Description: "Wiki locale (needed if the editor has multiple accounts)",
+				},
+			},
+		},
+		{
+			Name:        "commands",
+			Description: "Get chat commands for payments",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "month",
+					Description: "Month in YYYY-MM format, current by default",
+				},
+			},
+		},
+	}
 }

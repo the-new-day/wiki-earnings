@@ -17,7 +17,7 @@ import (
 const getHistoryQueryString = "/api.php?action=query&prop=revisions&rvlimit=500&rvprop=ids|userid|user|comment|timestamp&format=json&formatversion=2&rvdir=older"
 
 func FetchEdit(ctx context.Context, title string, revID int64, locale string) (entity.Edit, error) {
-	reqUrl := wikiUrl + locale + getHistoryQueryString + "&rvstartid=" + strconv.FormatInt(revID, 10) + "&titles=" + url.QueryEscape(title)
+	reqUrl := WikiUrl + locale + getHistoryQueryString + "&rvstartid=" + strconv.FormatInt(revID, 10) + "&titles=" + url.QueryEscape(title)
 
 	body, err := fetch(ctx, reqUrl)
 	if err != nil {

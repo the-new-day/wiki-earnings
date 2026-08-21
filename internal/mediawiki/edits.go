@@ -9,7 +9,7 @@ var (
 	ErrTitleAndRevisionMismatch = errors.New("revision from a different page") // TODO: use for edit fetching (not used yet)
 )
 
-const wikiUrl = "https://wiki.pro-tanki.online/"
+const WikiUrl = "https://wiki.pro-tanki.online/"
 
 const (
 	MinorEditTag             = "(ME)"

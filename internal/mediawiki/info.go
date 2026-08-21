@@ -14,12 +14,12 @@ import (
 const parseActionQueryString = "/api.php?action=parse&prop=revid|wikitext|tocdata|links|templates|images|categories|externallinks&formatversion=2&format=json"
 
 func FetchRecentInfo(ctx context.Context, page string, locale string) (entity.ArticleInfo, error) {
-	reqUrl := wikiUrl + locale + parseActionQueryString + "&page=" + url.QueryEscape(page)
+	reqUrl := WikiUrl + locale + parseActionQueryString + "&page=" + url.QueryEscape(page)
 	return fetchInfoByUrl(ctx, reqUrl)
 }
 
 func FetchInfoByRevId(ctx context.Context, revID int64, locale string) (entity.ArticleInfo, error) {
-	reqUrl := wikiUrl + locale + parseActionQueryString + "&oldid=" + strconv.FormatInt(revID, 10)
+	reqUrl := WikiUrl + locale + parseActionQueryString + "&oldid=" + strconv.FormatInt(revID, 10)
 	return fetchInfoByUrl(ctx, reqUrl)
 }
 

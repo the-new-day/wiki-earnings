@@ -31,7 +31,7 @@ type RecentChange struct {
 func FetchRecentChanges(ctx context.Context, locale string, since time.Time, limit int) ([]entity.RecentChange, error) {
 	var op = fmt.Sprintf("fetch recent changes locale=%s since=%s", locale, since.UTC().Format(time.RFC3339))
 
-	reqUrl := wikiUrl + locale + recentChangesQueryString +
+	reqUrl := WikiUrl + locale + recentChangesQueryString +
 		"&rclimit=" + strconv.Itoa(limit) +
 		"&rcstart=" + url.QueryEscape(since.UTC().Format(time.RFC3339))
 

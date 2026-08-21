@@ -11,20 +11,21 @@ const (
 	ItemAdditionCost int64 = 3500
 )
 
+// For every %crystalsForPremDay% crystals earned, editors receive 1 additional day of premium.
+const CrystalsForPremDay = 20000
+
 // BaseUnitCost is the cost for the work if all metrics are 100%.
 const BaseUnitCost = 100000
 
 // TranslatedArticleRate is the share of a full article's cost paid for a
 // translation: the text is reproduced rather than authored.
-const TranslatedArticleRate = 0.5
+const TranslatedArticleRate = 0.3
 
 // DegradationRate is the share of a quality drop that is still paid out. An
 // edit that lowers the metrics is not free work, but it is not full work either.
 const DegradationRate = 0.3
 
 // MinPayableWords is the length below which an article is not paid for at all.
-// This is a payout policy, not a metric setting: metrics score short articles
-// low on their own, this refuses to pay for them entirely.
 const MinPayableWords = 100
 
 // Metric scores one aspect of an article on a 0..1 scale. Weight is how much
@@ -131,4 +132,9 @@ func (p *Pricer) Cost(t entity.RevisionType, prev, curr *entity.ArticleInfo) int
 	}
 
 	return 0
+}
+
+// DaysPremium returns the number of days of premium that the editor receives in addition.
+func DaysPremium(crystalsEarned int) int {
+	return crystalsEarned / CrystalsForPremDay
 }

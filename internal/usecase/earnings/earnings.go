@@ -51,10 +51,11 @@ type Payslip struct {
 
 // Report is everyone's earnings over a period.
 type Report struct {
-	From    time.Time
-	To      time.Time
-	Editors []entity.EditorEarnings
-	Total   int64
+	From       time.Time
+	To         time.Time
+	Editors    []entity.EditorEarnings
+	Total      int64
+	TotalEdits int64
 
 	// SyncErr carries the same meaning as on Payslip.
 	SyncErr error

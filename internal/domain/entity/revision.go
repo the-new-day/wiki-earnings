@@ -26,3 +26,7 @@ type Revision struct {
 	ComputedAt     time.Time
 	CostOverridden bool
 }
+
+func (r RevisionType) IsMinor() bool {
+	return r == MinorEdit || r == ItemAddition
+}

@@ -102,7 +102,7 @@ func (b *Bot) handleSalary(
 
 	if payslip.SyncErr != nil {
 		log.Printf("sync err: %s", payslip.SyncErr)
-		return fmt.Sprintf("%s\n:warning: Wiki Sync error, results may be out of date.", result), nil
+		return fmt.Sprintf("%s\n:warning: Results may be out of date.", result), nil
 	}
 
 	return result, nil
@@ -128,8 +128,11 @@ func (b *Bot) handleEdits(
 
 	var body strings.Builder
 
+	autoMinorEditsCount := map[entity.RevisionType]int{}
+
 	for _, rev := range payslip.Revisions {
 		if !rev.CostOverridden && !showMinorEdits && rev.Type.IsMinor() {
+			autoMinorEditsCount[rev.Type]++
 			continue
 		}
 
@@ -152,12 +155,18 @@ func (b *Bot) handleEdits(
 	var result strings.Builder
 	fmt.Fprintf(&result, "Wiki Editor: %s\n", nickname)
 	fmt.Fprintf(&result, "Period: %s\n", monthToText(from))
-	fmt.Fprintf(&result, "Total edits: %d\n\n", len(payslip.Revisions))
+	fmt.Fprintf(&result, "Total edits: %d\n", len(payslip.Revisions))
+
+	for revType, count := range autoMinorEditsCount {
+		fmt.Fprintf(&result, "Auto %s count: %d\n", revTypeToString(revType), count)
+	}
+
+	result.WriteByte('\n')
 	fmt.Fprint(&result, body.String())
 
 	if payslip.SyncErr != nil {
 		log.Printf("sync err: %s", payslip.SyncErr)
-		return fmt.Sprintf("%s\n:warning: Wiki Sync error, results may be out of date.", result.String()), nil
+		return fmt.Sprintf("%s\n:warning: Results may be out of date.", result.String()), nil
 	}
 
 	return result.String(), nil
@@ -196,7 +205,7 @@ func (b *Bot) handleReport(
 
 	if report.SyncErr != nil {
 		log.Printf("sync err: %s", report.SyncErr)
-		return fmt.Sprintf("%s\n:warning: Wiki Sync error, results may be out of date.", result.String()), nil
+		return fmt.Sprintf("%s\n:warning: Results may be out of date.", result.String()), nil
 	}
 
 	return result.String(), nil

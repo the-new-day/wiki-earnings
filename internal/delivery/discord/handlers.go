@@ -79,22 +79,19 @@ func (b *Bot) runGated(
 		return
 	}
 
-	go func() {
-		initialText := func(text string) {
-			b.editReplyText(i, text)
-		}
+	rep := b.newReply(i, ephemeral)
 
-		result, err := fn(context.Background(), i, data, initialText)
+	go func() {
+		result, err := fn(context.Background(), i, data, rep.setText)
 		if err != nil {
-			b.editReplyError(i, err)
+			rep.fail(err)
 			return
 		}
 
-		messageID := b.editReplyText(i, result)
-		if messageID != "" && messageLifetime > 0 {
-			time.AfterFunc(messageLifetime, func() {
-				b.removeReply(i, messageID)
-			})
+		rep.setText(result)
+
+		if messageLifetime > 0 {
+			time.AfterFunc(messageLifetime, rep.remove)
 		}
 	}()
 }

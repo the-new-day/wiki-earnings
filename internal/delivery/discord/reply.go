@@ -40,31 +40,158 @@ func (b *Bot) deferReply(i *discordgo.InteractionCreate, ephemeral bool) bool {
 	return true
 }
 
-func (b *Bot) editReplyText(i *discordgo.InteractionCreate, content string) string {
-	msg, err := b.session.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
-	if err != nil {
-		b.editReplyError(i, err)
-	}
-	if msg != nil {
-		return msg.ID
-	}
-	return ""
-}
-
-func (b *Bot) editReplyError(i *discordgo.InteractionCreate, err error) {
+// errorText maps err to something worth putting in front of the user. The
+// second result is false when there is no such explanation - the caller should
+// log those and leave the user with the generic apology.
+func errorText(err error) (string, bool) {
 	switch {
 	case errors.Is(err, revisions.ErrLocaleRequired):
-		b.replyTextEphemeral(i, fmt.Sprintf("%v. This editor has multiple accounts. Specify the locale and repeat the command.", err))
+		return fmt.Sprintf("%v. This editor has multiple accounts. Specify the locale and repeat the command.", err), true
 	case errors.Is(err, storage.ErrNotFound):
-		b.replyTextEphemeral(i, "The editor or the edit not found.")
+		return "The editor or the edit not found.", true
 	case errors.Is(err, ErrWrongMonthLayout):
-		b.replyTextEphemeral(i, "Wrong month layout. Use YYYY-MM, for example 2026-08.")
+		return "Wrong month layout. Use YYYY-MM, for example 2026-08.", true
 	default:
-		log.Printf("discord: edit reply: %v", err)
-		b.replyTextEphemeral(i, "Something went wrong. Please let the nearest nerd know.")
+		return "Something went wrong. Please let the nearest nerd know.", false
 	}
 }
 
-func (b *Bot) removeReply(i *discordgo.InteractionCreate, messageID string) {
-	b.session.ChannelMessageDelete(i.ChannelID, messageID)
+// reply is the set of messages one interaction's answer is spread across: the
+// deferred response, plus a followup for every extra piece Discord's length
+// cap forces. It remembers what it has already posted, so rewriting reuses
+// those messages and drops the ones the new text no longer fills - an interim
+// update followed by a longer final answer leaves no stale fragments behind.
+type reply struct {
+	bot         *Bot
+	interaction *discordgo.InteractionCreate
+	ephemeral   bool
+
+	rootID      string
+	followupIDs []string
+}
+
+func (b *Bot) newReply(i *discordgo.InteractionCreate, ephemeral bool) *reply {
+	return &reply{bot: b, interaction: i, ephemeral: ephemeral}
+}
+
+// setText replaces whatever the reply currently shows with content, splitting
+// it across as many messages as it takes.
+func (r *reply) setText(content string) {
+	chunks := splitMessage(content, maxMessageLength)
+
+	msg, err := r.bot.session.InteractionResponseEdit(
+		r.interaction.Interaction,
+		&discordgo.WebhookEdit{Content: &chunks[0]},
+	)
+	if err != nil {
+		r.fail(err)
+		return
+	}
+	if msg != nil {
+		r.rootID = msg.ID
+	}
+
+	rest := chunks[1:]
+	r.writeFollowups(rest)
+	r.trimFollowups(len(rest))
+}
+
+// writeFollowups edits the followups already posted and creates the ones still
+// missing. A failure stops it: the trailing pieces would be out of order
+// anyway, and trimFollowups still gets to clean up after it.
+func (r *reply) writeFollowups(chunks []string) {
+	for idx, chunk := range chunks {
+		if idx < len(r.followupIDs) {
+			_, err := r.bot.session.FollowupMessageEdit(
+				r.interaction.Interaction,
+				r.followupIDs[idx],
+				&discordgo.WebhookEdit{Content: &chunk},
+			)
+			if err != nil {
+				log.Printf("discord: edit followup: %v", err)
+				return
+			}
+
+			continue
+		}
+
+		msg, err := r.bot.session.FollowupMessageCreate(r.interaction.Interaction, true, &discordgo.WebhookParams{
+			Content: chunk,
+			Flags:   r.flags(),
+		})
+		if err != nil {
+			log.Printf("discord: create followup: %v", err)
+			return
+		}
+
+		r.followupIDs = append(r.followupIDs, msg.ID)
+	}
+}
+
+// trimFollowups deletes the followups past keep, which the text the reply now
+// shows is too short to fill.
+func (r *reply) trimFollowups(keep int) {
+	if keep >= len(r.followupIDs) {
+		return
+	}
+
+	for _, id := range r.followupIDs[keep:] {
+		if err := r.bot.session.FollowupMessageDelete(r.interaction.Interaction, id); err != nil {
+			log.Printf("discord: delete followup: %v", err)
+		}
+	}
+
+	r.followupIDs = r.followupIDs[:keep]
+}
+
+// remove deletes every message the reply is made of, including the
+// "thinking..." placeholder if nothing has replaced it yet.
+func (r *reply) remove() {
+	r.trimFollowups(0)
+
+	// An ephemeral message exists only through the interaction, and so does a
+	// placeholder that was never edited into a real message. Anything else
+	// goes through the channel, which keeps working once the interaction
+	// token expires 15 minutes in - a message lifetime can outlast it.
+	if r.ephemeral || r.rootID == "" {
+		if err := r.bot.session.InteractionResponseDelete(r.interaction.Interaction); err != nil {
+			log.Printf("discord: delete reply: %v", err)
+		}
+
+		return
+	}
+
+	if err := r.bot.session.ChannelMessageDelete(r.interaction.ChannelID, r.rootID); err != nil {
+		log.Printf("discord: delete reply: %v", err)
+	}
+}
+
+// fail tells the user privately what went wrong and takes the reply down,
+// placeholder included. The error goes out as a followup because deferReply
+// has already acknowledged the interaction and Discord rejects a second
+// response; it is sent before the cleanup so that a failure to delete still
+// leaves the user with an explanation rather than a stuck "thinking...".
+func (r *reply) fail(err error) {
+	text, known := errorText(err)
+	if !known {
+		log.Printf("discord: %v", err)
+	}
+
+	_, sendErr := r.bot.session.FollowupMessageCreate(r.interaction.Interaction, true, &discordgo.WebhookParams{
+		Content: text,
+		Flags:   discordgo.MessageFlagsEphemeral,
+	})
+	if sendErr != nil {
+		log.Printf("discord: send error: %v", sendErr)
+	}
+
+	r.remove()
+}
+
+func (r *reply) flags() discordgo.MessageFlags {
+	if r.ephemeral {
+		return discordgo.MessageFlagsEphemeral
+	}
+
+	return 0
 }

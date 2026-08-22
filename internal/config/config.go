@@ -110,8 +110,7 @@ func Default() Config {
 }
 
 // Load starts from Default and overlays whatever the environment sets. An
-// unset variable keeps the default; a set but unparsable one is an error,
-// because silently falling back to a default nobody asked for is worse.
+// unset variable keeps the default.
 func Load() (Config, error) {
 	cfg := Default()
 

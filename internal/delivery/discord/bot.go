@@ -113,6 +113,11 @@ func registerCommands() {
 					Description: "Editor's nickname on the Wiki",
 					Required:    true,
 				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "month",
+					Description: "Month in YYYY-MM format, current by default",
+				},
 			},
 		},
 		{
@@ -130,11 +135,23 @@ func registerCommands() {
 					Name:        "show_minor",
 					Description: "Show ((ME)) and ((IA)) edits",
 				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "month",
+					Description: "Month in YYYY-MM format, current by default",
+				},
 			},
 		},
 		{
 			Name:        "report",
 			Description: "Full report on all editors for the month",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "month",
+					Description: "Month in YYYY-MM format, current by default",
+				},
+			},
 		},
 		{
 			Name:        "changepay",
@@ -168,11 +185,17 @@ func registerCommands() {
 		{
 			Name:        "commands",
 			Description: "Get chat commands for payments",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "month",
+					Description: "Month in YYYY-MM format, current by default",
+				},
+			},
 		},
 		{
-			Name: "resync",
-			Description: "Reload all edits from the Wiki and recalculate payments " +
-				"(won't affect changed payments). Run ONLY if absolutely necessary",
+			Name:        "resync",
+			Description: "Reload all edits from the Wiki and recalculate payments. Run ONLY if absolutely necessary",
 		},
 	}
 }

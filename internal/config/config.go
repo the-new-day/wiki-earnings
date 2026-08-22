@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -157,6 +158,14 @@ func Load() (Config, error) {
 	}
 	if err = duration(&cfg.ReplayInterval, "REPLAY_INTERVAL"); err != nil {
 		return Config{}, err
+	}
+
+	if raw, ok := os.LookupEnv("LOCALES"); ok {
+		locales := strings.Split(raw, ",")
+		for i := range locales {
+			locales[i] = strings.TrimSpace(locales[i])
+		}
+		cfg.Locales = locales
 	}
 
 	if v, ok := os.LookupEnv("POSTGRES_MAX_CONNS"); ok {

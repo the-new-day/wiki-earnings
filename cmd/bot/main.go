@@ -93,15 +93,27 @@ func run() error {
 		botDone <- bot.Run(ctx)
 	}()
 
-	<-ctx.Done()
+	var botErr error
+	botExited := false
+
+	select {
+	case <-ctx.Done():
+	case botErr = <-botDone:
+		// The bot stopped on its own - there is nothing left to serve,
+		// so bring the rest of the process down with it instead of
+		// sitting here alive until someone notices.
+		botExited = true
+		stop()
+	}
+
 	log.Println("shutting down")
 	<-replayDone
 
-	if err := <-botDone; err != nil {
-		return err
+	if !botExited {
+		botErr = <-botDone
 	}
 
-	return nil
+	return botErr
 }
 
 // runReplayLoop retries dead-lettered revisions on a schedule.

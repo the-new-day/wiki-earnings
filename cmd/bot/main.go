@@ -7,15 +7,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/the-new-day/protanki-wiki-admin/internal/app"
 	"github.com/the-new-day/protanki-wiki-admin/internal/config"
 	"github.com/the-new-day/protanki-wiki-admin/internal/delivery/discord"
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/pricing"
-	"github.com/the-new-day/protanki-wiki-admin/internal/mediawiki"
-	"github.com/the-new-day/protanki-wiki-admin/internal/storage/postgres"
 	"github.com/the-new-day/protanki-wiki-admin/internal/sync"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/resync"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
 )
 
 func main() {
@@ -33,50 +28,20 @@ func run() error {
 		return err
 	}
 
-	pool, err := postgres.Connect(ctx, cfg.Postgres)
+	a, err := app.New(ctx, cfg)
 	if err != nil {
 		return err
 	}
-	defer pool.Close()
+	defer a.Close()
 
 	log.Printf("connected to postgres %s:%d/%s, locales: %v",
 		cfg.Postgres.Host, cfg.Postgres.Port, cfg.Postgres.Database, cfg.Locales)
 
-	editorRepo := postgres.NewEditorRepository(pool)
-	revisionRepo := postgres.NewRevisionRepository(pool)
-	syncStateRepo := postgres.NewSyncStateRepository(pool)
-	deadLetterRepo := postgres.NewDeadLetterRepository(pool)
-	locker := postgres.NewLocker(pool)
-
-	syncSvc := sync.New(
-		mediawiki.NewClient(),
-		editorRepo,
-		revisionRepo,
-		syncStateRepo,
-		deadLetterRepo,
-		pricing.Default(),
-		locker,
-		sync.Config{
-			Locales:         cfg.Locales,
-			BatchSize:       cfg.SyncBatchSize,
-			InitialLookback: cfg.InitialLookback,
-			MinInterval:     cfg.SyncMinInterval,
-			MaxDuration:     cfg.SyncMaxDuration,
-			Concurrency:     cfg.SyncConcurrency,
-			MaxAttempts:     cfg.DeadLetterMaxAttempts,
-			ReplayBatchSize: cfg.DeadLetterBatchSize,
-		},
-	)
-
-	earningsUC := earnings.New(editorRepo, revisionRepo, syncSvc)
-	revisionsUC := revisions.New(editorRepo, revisionRepo)
-	resyncUC := resync.New(syncStateRepo, deadLetterRepo, syncSvc, cfg.Locales)
-
 	bot, err := discord.New(
 		cfg.DiscordBotToken,
-		earningsUC,
-		revisionsUC,
-		resyncUC,
+		a.Earnings,
+		a.Revisions,
+		a.Resync,
 		cfg.WikiRoleID,
 		cfg.WikiAdminRoleID,
 		cfg.MessageLifetime,
@@ -86,7 +51,7 @@ func run() error {
 	}
 
 	replayDone := make(chan struct{})
-	go runReplayLoop(ctx, syncSvc, cfg.ReplayInterval, replayDone)
+	go runReplayLoop(ctx, a.Sync, cfg.ReplayInterval, replayDone)
 
 	botDone := make(chan error, 1)
 	go func() {
@@ -99,9 +64,6 @@ func run() error {
 	select {
 	case <-ctx.Done():
 	case botErr = <-botDone:
-		// The bot stopped on its own - there is nothing left to serve,
-		// so bring the rest of the process down with it instead of
-		// sitting here alive until someone notices.
 		botExited = true
 		stop()
 	}

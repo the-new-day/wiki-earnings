@@ -134,6 +134,9 @@ func Load() (Config, error) {
 	if err = duration(&cfg.Postgres.ConnectTimeout, "POSTGRES_CONNECT_TIMEOUT"); err != nil {
 		return Config{}, err
 	}
+	if err = duration(&cfg.Postgres.MaxConnLifetime, "POSTGRES_MAX_CONN_LIFETIME"); err != nil {
+		return Config{}, err
+	}
 	if err = intVar(&cfg.SyncBatchSize, "SYNC_BATCH_SIZE"); err != nil {
 		return Config{}, err
 	}

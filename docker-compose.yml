@@ -31,6 +31,9 @@ services:
     build:
       context: .
       target: app
+    env_file:
+      - path: .env
+        required: false
     environment:
       <<: *postgres-env
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}

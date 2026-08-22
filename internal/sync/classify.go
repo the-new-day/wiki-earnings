@@ -53,8 +53,8 @@ var taggedTypes = []struct {
 	{mediawiki.NewArticleEditTag, entity.NewArticle},
 	{mediawiki.TranslatedArticleEditTag, entity.TranslatedArticle},
 	{mediawiki.RefactoredArticleEditTag, entity.RefactoredArticle},
-	{mediawiki.ItemAdditionEditTag, entity.ItemAddition},
 	{mediawiki.ArticleEditTag, entity.ArticleEdit},
+	{mediawiki.ItemAdditionEditTag, entity.ItemAddition},
 	{mediawiki.MinorEditTag, entity.MinorEdit},
 }
 

@@ -123,7 +123,10 @@ func Load() (Config, error) {
 	str(&cfg.Postgres.Password, "POSTGRES_PASSWORD")
 	str(&cfg.Postgres.Database, "POSTGRES_DB")
 	str(&cfg.Postgres.SSLMode, "POSTGRES_SSLMODE")
-	duration(&cfg.MessageLifetime, "MESSAGE_LIFETIME")
+
+	if err = duration(&cfg.MessageLifetime, "MESSAGE_LIFETIME"); err != nil {
+		return Config{}, err
+	}
 
 	if err = intVar(&cfg.Postgres.Port, "POSTGRES_PORT"); err != nil {
 		return Config{}, err

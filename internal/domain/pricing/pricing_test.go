@@ -78,11 +78,13 @@ func TestDidYouKnowBonus_EditRemovesTemplate_NoBonus(t *testing.T) {
 	assert.Equal(t, int64(pricing.MinPayment), cost)
 }
 
-func TestArticleCost_BelowMinPayableContentUnits_IsZero(t *testing.T) {
+func TestArticleCost_TinyContent_StillGetsMinPayment(t *testing.T) {
 	p := pricing.Default()
 	tiny := entity.ArticleInfo{Words: []string{"один", "два", "три"}}
 
-	assert.Equal(t, int64(0), p.Cost(entity.NewArticle, nil, &tiny))
+	// MinPayment is unconditional by design: a human reviews every payout, so
+	// the pricer doesn't gate near-empty content down to zero.
+	assert.Equal(t, int64(pricing.MinPayment), p.Cost(entity.NewArticle, nil, &tiny))
 }
 
 func TestEditCost_NegativeDiffsEarnNothing_ButFloorStillApplies(t *testing.T) {

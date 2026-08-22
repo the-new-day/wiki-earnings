@@ -12,17 +12,22 @@ import (
 	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
 	"github.com/the-new-day/protanki-wiki-admin/internal/domain/pricing"
 	"github.com/the-new-day/protanki-wiki-admin/internal/mediawiki"
+	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings"
 )
 
 const monthLayout = "2006-01"
 const dayLayout = "2006-01-02"
 
 // commandFunc does the actual work for a command, off the 3-second interaction
-// ack deadline. Its result is pasted into the edited reply.
+// ack deadline. Its result is pasted into the edited reply. update lets it
+// push an interim edit before returning - e.g. cached data shown instantly,
+// replaced once a slower refresh finishes.
 type commandFunc func(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
-	data discordgo.ApplicationCommandInteractionData) (string, error)
+	data discordgo.ApplicationCommandInteractionData,
+	update func(text string),
+) (string, error)
 
 func (b *Bot) handleInteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if i.Type != discordgo.InteractionApplicationCommand {
@@ -68,7 +73,11 @@ func (b *Bot) runGated(
 	}
 
 	go func() {
-		result, err := fn(context.Background(), i, data)
+		update := func(text string) {
+			b.editReplyText(s, i, text)
+		}
+
+		result, err := fn(context.Background(), i, data, update)
 		if err != nil {
 			b.editReplyError(s, i, err)
 			return
@@ -82,6 +91,7 @@ func (b *Bot) handleSalary(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
 	data discordgo.ApplicationCommandInteractionData,
+	update func(string),
 ) (string, error) {
 	nickname := data.GetOption("nickname").StringValue()
 
@@ -90,15 +100,16 @@ func (b *Bot) handleSalary(
 		return "", err
 	}
 
+	if cached, err := b.earnings.ReadForNickname(ctx, nickname, from, to); err == nil {
+		update(formatSalary(nickname, from, cached.Total) + "\n-# refreshing with latest edits...")
+	}
+
 	payslip, err := b.earnings.ForNickname(ctx, nickname, from, to)
 	if err != nil {
 		return "", err
 	}
 
-	result := fmt.Sprintf(
-		"Wiki Editor: %s\nPeriod: %s\nEarned: %s",
-		nickname, monthToText(from), earningsToString(int(payslip.Total)),
-	)
+	result := formatSalary(nickname, from, payslip.Total)
 
 	if payslip.SyncErr != nil {
 		log.Printf("sync err: %s", payslip.SyncErr)
@@ -108,10 +119,18 @@ func (b *Bot) handleSalary(
 	return result, nil
 }
 
+func formatSalary(nickname string, from time.Time, total int64) string {
+	return fmt.Sprintf(
+		"Wiki Editor: %s\nPeriod: %s\nEarned: %s",
+		nickname, monthToText(from), earningsToString(int(total)),
+	)
+}
+
 func (b *Bot) handleEdits(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
 	data discordgo.ApplicationCommandInteractionData,
+	update func(string),
 ) (string, error) {
 	nickname := data.GetOption("nickname").StringValue()
 	showMinorEdits := optionalBool(data, "show_minor")
@@ -121,11 +140,26 @@ func (b *Bot) handleEdits(
 		return "", err
 	}
 
+	if cached, err := b.earnings.ReadForNickname(ctx, nickname, from, to); err == nil {
+		update(formatEdits(nickname, from, cached, showMinorEdits) + "\n-# refreshing with latest edits...")
+	}
+
 	payslip, err := b.earnings.ForNickname(ctx, nickname, from, to)
 	if err != nil {
 		return "", err
 	}
 
+	result := formatEdits(nickname, from, payslip, showMinorEdits)
+
+	if payslip.SyncErr != nil {
+		log.Printf("sync err: %s", payslip.SyncErr)
+		return fmt.Sprintf("%s\n:warning: Results may be out of date.", result), nil
+	}
+
+	return result, nil
+}
+
+func formatEdits(nickname string, from time.Time, payslip earnings.Payslip, showMinorEdits bool) string {
 	var body strings.Builder
 
 	autoMinorEditsCount := map[entity.RevisionType]int{}
@@ -141,7 +175,7 @@ func (b *Bot) handleEdits(
 		//   10 310 💎 (changed)
 		costChanged := ""
 		if rev.CostOverridden {
-			costChanged = "changed"
+			costChanged = "(changed)"
 		}
 
 		fmt.Fprintf(&body,
@@ -164,22 +198,22 @@ func (b *Bot) handleEdits(
 	result.WriteByte('\n')
 	fmt.Fprint(&result, body.String())
 
-	if payslip.SyncErr != nil {
-		log.Printf("sync err: %s", payslip.SyncErr)
-		return fmt.Sprintf("%s\n:warning: Results may be out of date.", result.String()), nil
-	}
-
-	return result.String(), nil
+	return result.String()
 }
 
 func (b *Bot) handleReport(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
 	data discordgo.ApplicationCommandInteractionData,
+	update func(string),
 ) (string, error) {
 	from, to, err := monthRange(optionalString(data, "month"))
 	if err != nil {
 		return "", err
+	}
+
+	if cached, err := b.earnings.ReadReport(ctx, from, to); err == nil {
+		update(formatReport(from, cached) + "\n-# refreshing with latest edits...")
 	}
 
 	report, err := b.earnings.Report(ctx, from, to)
@@ -187,6 +221,17 @@ func (b *Bot) handleReport(
 		return "", err
 	}
 
+	result := formatReport(from, report)
+
+	if report.SyncErr != nil {
+		log.Printf("sync err: %s", report.SyncErr)
+		return fmt.Sprintf("%s\n:warning: Results may be out of date.", result), nil
+	}
+
+	return result, nil
+}
+
+func formatReport(from time.Time, report earnings.Report) string {
 	var result strings.Builder
 	fmt.Fprint(&result, "### Earnings report\n")
 	fmt.Fprintf(&result, "Period: %s\n", monthToText(from))
@@ -203,18 +248,14 @@ func (b *Bot) handleReport(
 		)
 	}
 
-	if report.SyncErr != nil {
-		log.Printf("sync err: %s", report.SyncErr)
-		return fmt.Sprintf("%s\n:warning: Results may be out of date.", result.String()), nil
-	}
-
-	return result.String(), nil
+	return result.String()
 }
 
 func (b *Bot) handleChangePay(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
 	data discordgo.ApplicationCommandInteractionData,
+	_ func(string),
 ) (string, error) {
 	nickname := data.GetOption("nickname").StringValue()
 	editID := data.GetOption("edit_id").IntValue()
@@ -234,6 +275,7 @@ func (b *Bot) handleResync(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
 	data discordgo.ApplicationCommandInteractionData,
+	_ func(string),
 ) (string, error) {
 	if err := b.resync.Resync(ctx); err != nil {
 		return "", err
@@ -246,10 +288,15 @@ func (b *Bot) handleCommands(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
 	data discordgo.ApplicationCommandInteractionData,
+	update func(string),
 ) (string, error) {
 	from, to, err := monthRange(optionalString(data, "month"))
 	if err != nil {
 		return "", err
+	}
+
+	if cached, err := b.earnings.ReadReport(ctx, from, to); err == nil {
+		update(formatCommands(cached) + "\n-# refreshing with latest edits...")
 	}
 
 	report, err := b.earnings.Report(ctx, from, to)
@@ -257,6 +304,10 @@ func (b *Bot) handleCommands(
 		return "", err
 	}
 
+	return formatCommands(report), nil
+}
+
+func formatCommands(report earnings.Report) string {
 	var result strings.Builder
 	result.WriteString("```\n")
 
@@ -287,7 +338,7 @@ func (b *Bot) handleCommands(
 	}
 
 	result.WriteString("```")
-	return result.String(), nil
+	return result.String()
 }
 
 func hasAnyRole(member *discordgo.Member, roleIDs ...string) bool {

@@ -93,12 +93,13 @@ func (u *UseCase) ForNickname(ctx context.Context, nickname string, from, to tim
 	// last sync has no row yet, and would otherwise be told they do not exist.
 	syncErr := u.sync(ctx)
 
-	editor, err := u.editors.FindByNickname(ctx, nickname)
+	p, err := u.ReadForNickname(ctx, nickname, from, to)
 	if err != nil {
-		return Payslip{}, fmt.Errorf("earnings: editor %q: %w", nickname, err)
+		return Payslip{}, err
 	}
 
-	return u.payslip(ctx, editor, from, to, syncErr)
+	p.SyncErr = syncErr
+	return p, nil
 }
 
 // ForEditor is the same query for a caller that already knows the internal id.
@@ -109,12 +110,13 @@ func (u *UseCase) ForEditor(ctx context.Context, editorID int64, from, to time.T
 
 	syncErr := u.sync(ctx)
 
-	editor, err := u.editors.GetByID(ctx, editorID)
+	p, err := u.ReadForEditor(ctx, editorID, from, to)
 	if err != nil {
-		return Payslip{}, fmt.Errorf("earnings: editor %d: %w", editorID, err)
+		return Payslip{}, err
 	}
 
-	return u.payslip(ctx, editor, from, to, syncErr)
+	p.SyncErr = syncErr
+	return p, nil
 }
 
 // Report is the payroll view: every editor who earned anything in the period.
@@ -125,12 +127,57 @@ func (u *UseCase) Report(ctx context.Context, from, to time.Time) (Report, error
 
 	syncErr := u.sync(ctx)
 
+	r, err := u.ReadReport(ctx, from, to)
+	if err != nil {
+		return Report{}, err
+	}
+
+	r.SyncErr = syncErr
+	return r, nil
+}
+
+// ReadForNickname is ForNickname without syncing first: whatever is already
+// stored. For a caller doing its own two-phase flow - show this instantly,
+// then refresh in the background and show ForNickname's result once it's in.
+func (u *UseCase) ReadForNickname(ctx context.Context, nickname string, from, to time.Time) (Payslip, error) {
+	if err := checkPeriod(from, to); err != nil {
+		return Payslip{}, err
+	}
+
+	editor, err := u.editors.FindByNickname(ctx, nickname)
+	if err != nil {
+		return Payslip{}, fmt.Errorf("earnings: editor %q: %w", nickname, err)
+	}
+
+	return u.payslip(ctx, editor, from, to, nil)
+}
+
+// ReadForEditor is ForEditor without syncing first.
+func (u *UseCase) ReadForEditor(ctx context.Context, editorID int64, from, to time.Time) (Payslip, error) {
+	if err := checkPeriod(from, to); err != nil {
+		return Payslip{}, err
+	}
+
+	editor, err := u.editors.GetByID(ctx, editorID)
+	if err != nil {
+		return Payslip{}, fmt.Errorf("earnings: editor %d: %w", editorID, err)
+	}
+
+	return u.payslip(ctx, editor, from, to, nil)
+}
+
+// ReadReport is Report without syncing first.
+func (u *UseCase) ReadReport(ctx context.Context, from, to time.Time) (Report, error) {
+	if err := checkPeriod(from, to); err != nil {
+		return Report{}, err
+	}
+
 	rows, err := u.revisions.SumCostByEditor(ctx, from, to)
 	if err != nil {
 		return Report{}, fmt.Errorf("earnings: sum by editor: %w", err)
 	}
 
-	report := Report{From: from, To: to, Editors: rows, SyncErr: syncErr}
+	report := Report{From: from, To: to, Editors: rows}
 	for _, r := range rows {
 		report.Total += r.Total
 	}

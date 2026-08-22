@@ -48,7 +48,7 @@ func (repo *EditorRepository) GetByID(ctx context.Context, id int64) (entity.Edi
 func (repo *EditorRepository) FindByNickname(ctx context.Context, nickname string) (entity.Editor, error) {
 	var e entity.Editor
 	err := repo.pool.QueryRow(ctx, `
-		SELECT editor_id, nickname FROM editors WHERE nickname = $1`, nickname).
+		SELECT editor_id, nickname FROM editors WHERE nickname ILIKE $1`, nickname).
 		Scan(&e.EditorID, &e.Nickname)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return entity.Editor{}, fmt.Errorf("postgres: find editor %q: %w", nickname, storage.ErrNotFound)

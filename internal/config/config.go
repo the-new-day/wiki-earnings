@@ -5,7 +5,6 @@ import (
 	"net/url"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -69,6 +68,11 @@ type Config struct {
 	// three round trips to the wiki.
 	SyncConcurrency int
 
+	// MessageLifetime is the time the bot's message will be present in the chat.
+	// Not all commands should support this, only "temporary" ones.
+	// Zero lifetime means messages don't get deleted.
+	MessageLifetime time.Duration
+
 	DeadLetterMaxAttempts int
 	DeadLetterBatchSize   int
 
@@ -97,6 +101,7 @@ func Default() Config {
 		SyncMinInterval:       time.Minute,
 		SyncMaxDuration:       20 * time.Second,
 		SyncConcurrency:       8,
+		MessageLifetime:       2 * time.Minute,
 		DeadLetterMaxAttempts: 5,
 		DeadLetterBatchSize:   100,
 		ReplayInterval:        5 * time.Minute,
@@ -118,6 +123,7 @@ func Load() (Config, error) {
 	str(&cfg.Postgres.Password, "POSTGRES_PASSWORD")
 	str(&cfg.Postgres.Database, "POSTGRES_DB")
 	str(&cfg.Postgres.SSLMode, "POSTGRES_SSLMODE")
+	duration(&cfg.MessageLifetime, "MESSAGE_LIFETIME")
 
 	if err = intVar(&cfg.Postgres.Port, "POSTGRES_PORT"); err != nil {
 		return Config{}, err
@@ -148,14 +154,6 @@ func Load() (Config, error) {
 	}
 	if err = duration(&cfg.ReplayInterval, "REPLAY_INTERVAL"); err != nil {
 		return Config{}, err
-	}
-
-	if raw, ok := os.LookupEnv("LOCALES"); ok {
-		locales := strings.Split(raw, ",")
-		for i := range locales {
-			locales[i] = strings.TrimSpace(locales[i])
-		}
-		cfg.Locales = locales
 	}
 
 	if v, ok := os.LookupEnv("POSTGRES_MAX_CONNS"); ok {

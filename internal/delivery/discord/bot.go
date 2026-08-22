@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings"
@@ -35,6 +36,7 @@ func New(
 	revisionsUC *revisions.UseCase,
 	resyncUC *resync.UseCase,
 	wikiRoleID, wikiAdminRoleID string,
+	messageLifetime time.Duration,
 ) (*Bot, error) {
 	session, err := discordgo.New("Bot " + token)
 	if err != nil {
@@ -52,7 +54,9 @@ func New(
 		wikiAdminRoleID: wikiAdminRoleID,
 	}
 	session.AddHandler(bot.handleReady)
-	session.AddHandler(bot.handleInteractionCreate)
+	session.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		bot.handleInteractionCreate(i, messageLifetime)
+	})
 	session.AddHandler(bot.handleMessageCreate)
 
 	return bot, nil
@@ -109,11 +113,6 @@ func registerCommands() {
 					Description: "Editor's nickname on the Wiki",
 					Required:    true,
 				},
-				{
-					Type:        discordgo.ApplicationCommandOptionString,
-					Name:        "month",
-					Description: "Month in YYYY-MM format, current by default",
-				},
 			},
 		},
 		{
@@ -131,23 +130,11 @@ func registerCommands() {
 					Name:        "show_minor",
 					Description: "Show ((ME)) and ((IA)) edits",
 				},
-				{
-					Type:        discordgo.ApplicationCommandOptionString,
-					Name:        "month",
-					Description: "Month in YYYY-MM format, current by default",
-				},
 			},
 		},
 		{
 			Name:        "report",
 			Description: "Full report on all editors for the month",
-			Options: []*discordgo.ApplicationCommandOption{
-				{
-					Type:        discordgo.ApplicationCommandOptionString,
-					Name:        "month",
-					Description: "Month in YYYY-MM format, current by default",
-				},
-			},
 		},
 		{
 			Name:        "changepay",
@@ -179,19 +166,13 @@ func registerCommands() {
 			},
 		},
 		{
-			Name:        "resync",
-			Description: "Reload all edits from the Wiki and recalculate payments",
-		},
-		{
 			Name:        "commands",
 			Description: "Get chat commands for payments",
-			Options: []*discordgo.ApplicationCommandOption{
-				{
-					Type:        discordgo.ApplicationCommandOptionString,
-					Name:        "month",
-					Description: "Month in YYYY-MM format, current by default",
-				},
-			},
+		},
+		{
+			Name: "resync",
+			Description: "Reload all edits from the Wiki and recalculate payments " +
+				"(won't affect changed payments). Run ONLY if absolutely necessary",
 		},
 	}
 }

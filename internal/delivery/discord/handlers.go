@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -18,6 +19,8 @@ import (
 const monthLayout = "2006-01"
 const dayLayout = "2006-01-02"
 
+var ErrWrongMonthLayout = errors.New("wrong month layout")
+
 // commandFunc does the actual work for a command, off the 3-second interaction
 // ack deadline. Its result is pasted into the edited reply. update lets it
 // push an interim edit before returning - e.g. cached data shown instantly,
@@ -26,10 +29,13 @@ type commandFunc func(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
 	data discordgo.ApplicationCommandInteractionData,
-	update func(text string),
+	initialText func(text string),
 ) (string, error)
 
-func (b *Bot) handleInteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func (b *Bot) handleInteractionCreate(
+	i *discordgo.InteractionCreate,
+	messageLifetime time.Duration,
+) {
 	if i.Type != discordgo.InteractionApplicationCommand {
 		return
 	}
@@ -38,52 +44,58 @@ func (b *Bot) handleInteractionCreate(s *discordgo.Session, i *discordgo.Interac
 
 	switch data.Name {
 	case "salary":
-		b.runGated(s, i, data, []string{b.wikiRoleID, b.wikiAdminRoleID}, true, b.handleSalary)
+		b.runGated(i, data, []string{b.wikiRoleID, b.wikiAdminRoleID}, true, b.handleSalary, 0)
 	case "edits":
-		b.runGated(s, i, data, []string{b.wikiRoleID, b.wikiAdminRoleID}, false, b.handleEdits)
+		b.runGated(i, data, []string{b.wikiRoleID, b.wikiAdminRoleID}, false, b.handleEdits, messageLifetime)
 	case "report":
-		b.runGated(s, i, data, []string{b.wikiAdminRoleID}, false, b.handleReport)
+		b.runGated(i, data, []string{b.wikiAdminRoleID}, false, b.handleReport, 0)
 	case "changepay":
-		b.runGated(s, i, data, []string{b.wikiAdminRoleID}, true, b.handleChangePay)
+		b.runGated(i, data, []string{b.wikiAdminRoleID}, true, b.handleChangePay, 0)
 	case "commands":
-		b.runGated(s, i, data, []string{b.wikiAdminRoleID}, false, b.handleCommands)
+		b.runGated(i, data, []string{b.wikiAdminRoleID}, false, b.handleCommands, 0)
 	case "resync":
-		b.runGated(s, i, data, []string{b.wikiAdminRoleID}, true, b.handleResync)
+		b.runGated(i, data, []string{b.wikiAdminRoleID}, true, b.handleResync, 0)
 	}
 }
 
 // runGated checks role membership, then immediately defers so Discord stops waiting
 // on the 3-second ack window, and runs fn in the background. When fn returns,
 // the deferred "thinking" message is edited into the real result.
+// if messageLifetime is not zero, the message will be deleted after that time passes.
 func (b *Bot) runGated(
-	s *discordgo.Session,
 	i *discordgo.InteractionCreate,
 	data discordgo.ApplicationCommandInteractionData,
 	roleIDs []string,
 	ephemeral bool,
 	fn commandFunc,
+	messageLifetime time.Duration,
 ) {
 	if i.Member == nil || !hasAnyRole(i.Member, roleIDs...) {
-		b.replyTextEphemeral(s, i, "You are not allowed to run this command. ♿")
+		b.replyTextEphemeral(i, "You are not allowed to run this command. ♿")
 		return
 	}
 
-	if !b.deferReply(s, i, ephemeral) {
+	if !b.deferReply(i, ephemeral) {
 		return
 	}
 
 	go func() {
-		update := func(text string) {
-			b.editReplyText(s, i, text)
+		initialText := func(text string) {
+			b.editReplyText(i, text)
 		}
 
-		result, err := fn(context.Background(), i, data, update)
+		result, err := fn(context.Background(), i, data, initialText)
 		if err != nil {
-			b.editReplyError(s, i, err)
+			b.editReplyError(i, err)
 			return
 		}
 
-		b.editReplyText(s, i, result)
+		messageID := b.editReplyText(i, result)
+		if messageID != "" && messageLifetime > 0 {
+			time.AfterFunc(messageLifetime, func() {
+				b.removeReply(i, messageID)
+			})
+		}
 	}()
 }
 
@@ -91,7 +103,7 @@ func (b *Bot) handleSalary(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
 	data discordgo.ApplicationCommandInteractionData,
-	update func(string),
+	initialText func(string),
 ) (string, error) {
 	nickname := data.GetOption("nickname").StringValue()
 
@@ -101,7 +113,7 @@ func (b *Bot) handleSalary(
 	}
 
 	if cached, err := b.earnings.ReadForNickname(ctx, nickname, from, to); err == nil {
-		update(formatSalary(nickname, from, cached.Total) + "\n-# refreshing with latest edits...")
+		initialText(formatSalary(nickname, from, cached.Total) + "\n-# Refreshing with latest edits...")
 	}
 
 	payslip, err := b.earnings.ForNickname(ctx, nickname, from, to)
@@ -130,7 +142,7 @@ func (b *Bot) handleEdits(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
 	data discordgo.ApplicationCommandInteractionData,
-	update func(string),
+	initialText func(string),
 ) (string, error) {
 	nickname := data.GetOption("nickname").StringValue()
 	showMinorEdits := optionalBool(data, "show_minor")
@@ -141,7 +153,7 @@ func (b *Bot) handleEdits(
 	}
 
 	if cached, err := b.earnings.ReadForNickname(ctx, nickname, from, to); err == nil {
-		update(formatEdits(nickname, from, cached, showMinorEdits) + "\n-# refreshing with latest edits...")
+		initialText(formatEdits(nickname, from, cached, showMinorEdits) + "\n-# Refreshing with latest edits...")
 	}
 
 	payslip, err := b.earnings.ForNickname(ctx, nickname, from, to)
@@ -173,16 +185,16 @@ func formatEdits(nickname string, from time.Time, payslip earnings.Payslip, show
 		// example:
 		// * [2026-08-20|13052] ((NA)): [Main Page](<https://wiki.pro-tanki.online/en/Main_Page>)
 		//   10 310 💎 (changed)
-		costChanged := ""
+		costChangedText := ""
 		if rev.CostOverridden {
-			costChanged = "(changed)"
+			costChangedText = "(changed)"
 		}
 
 		fmt.Fprintf(&body,
 			"* [%s|%d] %s: [%s](<%s%s/%s>)\n  %d 💎 %s\n",
 			rev.EditedAt.Format(dayLayout), rev.RevID, revTypeToString(rev.Type),
 			rev.PageTitle, mediawiki.WikiUrl, rev.Locale, strings.ReplaceAll(rev.PageTitle, " ", "_"),
-			rev.Cost, costChanged,
+			rev.Cost, costChangedText,
 		)
 	}
 
@@ -205,7 +217,7 @@ func (b *Bot) handleReport(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
 	data discordgo.ApplicationCommandInteractionData,
-	update func(string),
+	initialText func(string),
 ) (string, error) {
 	from, to, err := monthRange(optionalString(data, "month"))
 	if err != nil {
@@ -213,7 +225,7 @@ func (b *Bot) handleReport(
 	}
 
 	if cached, err := b.earnings.ReadReport(ctx, from, to); err == nil {
-		update(formatReport(from, cached) + "\n-# refreshing with latest edits...")
+		initialText(formatReport(from, cached) + "\n-# Refreshing with latest edits...")
 	}
 
 	report, err := b.earnings.Report(ctx, from, to)
@@ -288,7 +300,7 @@ func (b *Bot) handleCommands(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
 	data discordgo.ApplicationCommandInteractionData,
-	update func(string),
+	initialText func(string),
 ) (string, error) {
 	from, to, err := monthRange(optionalString(data, "month"))
 	if err != nil {
@@ -296,7 +308,7 @@ func (b *Bot) handleCommands(
 	}
 
 	if cached, err := b.earnings.ReadReport(ctx, from, to); err == nil {
-		update(formatCommands(cached) + "\n-# refreshing with latest edits...")
+		initialText(formatCommands(cached) + "\n-# Refreshing with latest edits...")
 	}
 
 	report, err := b.earnings.Report(ctx, from, to)
@@ -362,7 +374,7 @@ func monthRange(raw string) (time.Time, time.Time, error) {
 	} else {
 		parsed, err := time.Parse(monthLayout, raw)
 		if err != nil {
-			return time.Time{}, time.Time{}, fmt.Errorf("discord: month %q: YYYY-MM format is expected: %w", raw, err)
+			return time.Time{}, time.Time{}, ErrWrongMonthLayout
 		}
 		from = time.Date(parsed.Year(), parsed.Month(), 1, 0, 0, 0, 0, time.UTC)
 	}
@@ -399,9 +411,10 @@ func earningsToString(amount int) string {
 
 	daysOfPrem := pricing.DaysPremium(amount)
 
-	if daysOfPrem == 0 {
+	switch daysOfPrem {
+	case 0:
 		return fmt.Sprintf("%d 💎", amount)
-	} else if daysOfPrem == 1 {
+	case 1:
 		return fmt.Sprintf("%d 💎 + 1 day of Premium", amount)
 	}
 	return fmt.Sprintf("%d 💎 + %d days of Premium", amount, daysOfPrem)

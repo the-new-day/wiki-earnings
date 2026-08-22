@@ -1,7 +1,6 @@
 package discord
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -11,18 +10,8 @@ import (
 	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
 )
 
-func (b *Bot) replyText(s *discordgo.Session, i *discordgo.InteractionCreate, content string) {
-	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{Content: content},
-	})
-	if err != nil {
-		log.Printf("discord: reply: %v", err)
-	}
-}
-
-func (b *Bot) replyTextEphemeral(s *discordgo.Session, i *discordgo.InteractionCreate, content string) {
-	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+func (b *Bot) replyTextEphemeral(i *discordgo.InteractionCreate, content string) {
+	err := b.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: content,
@@ -37,13 +26,13 @@ func (b *Bot) replyTextEphemeral(s *discordgo.Session, i *discordgo.InteractionC
 // deferReply acknowledges the interaction immediately with a "thinking..."
 // placeholder, buying up to 15 minutes to edit in the real response instead
 // of the default 3 seconds.
-func (b *Bot) deferReply(s *discordgo.Session, i *discordgo.InteractionCreate, ephemeral bool) bool {
+func (b *Bot) deferReply(i *discordgo.InteractionCreate, ephemeral bool) bool {
 	resp := &discordgo.InteractionResponse{Type: discordgo.InteractionResponseDeferredChannelMessageWithSource}
 	if ephemeral {
 		resp.Data = &discordgo.InteractionResponseData{Flags: discordgo.MessageFlagsEphemeral}
 	}
 
-	if err := s.InteractionRespond(i.Interaction, resp); err != nil {
+	if err := b.session.InteractionRespond(i.Interaction, resp); err != nil {
 		log.Printf("discord: defer: %v", err)
 		return false
 	}
@@ -51,32 +40,31 @@ func (b *Bot) deferReply(s *discordgo.Session, i *discordgo.InteractionCreate, e
 	return true
 }
 
-func (b *Bot) editReplyText(s *discordgo.Session, i *discordgo.InteractionCreate, content string) {
-	_, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
+func (b *Bot) editReplyText(i *discordgo.InteractionCreate, content string) string {
+	msg, err := b.session.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
 	if err != nil {
-		b.editReplyError(s, i, err)
+		b.editReplyError(i, err)
 	}
+	if msg != nil {
+		return msg.ID
+	}
+	return ""
 }
 
-// editReplyJSON dumps v as a raw JSON code block.
-func (b *Bot) editReplyJSON(s *discordgo.Session, i *discordgo.InteractionCreate, v any) {
-	encoded, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		b.editReplyError(s, i, err)
-		return
-	}
-
-	b.editReplyText(s, i, fmt.Sprintf("```json\n%s\n```", encoded))
-}
-
-func (b *Bot) editReplyError(s *discordgo.Session, i *discordgo.InteractionCreate, err error) {
+func (b *Bot) editReplyError(i *discordgo.InteractionCreate, err error) {
 	switch {
 	case errors.Is(err, revisions.ErrLocaleRequired):
-		b.editReplyText(s, i, fmt.Sprintf("%v. Specify the locale and repeat the command.", err))
+		b.replyTextEphemeral(i, fmt.Sprintf("%v. This editor has multiple accounts. Specify the locale and repeat the command.", err))
 	case errors.Is(err, storage.ErrNotFound):
-		b.editReplyText(s, i, "The editor or the edit not found.")
+		b.replyTextEphemeral(i, "The editor or the edit not found.")
+	case errors.Is(err, ErrWrongMonthLayout):
+		b.replyTextEphemeral(i, "Wrong month layout. Use YYYY-MM, for example 2026-08.")
 	default:
 		log.Printf("discord: edit reply: %v", err)
-		b.editReplyText(s, i, "Something went wrong. Please let the nearest nerd know.")
+		b.replyTextEphemeral(i, "Something went wrong. Please let the nearest nerd know.")
 	}
+}
+
+func (b *Bot) removeReply(i *discordgo.InteractionCreate, messageID string) {
+	b.session.ChannelMessageDelete(i.ChannelID, messageID)
 }

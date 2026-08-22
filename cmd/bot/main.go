@@ -72,7 +72,15 @@ func run() error {
 	revisionsUC := revisions.New(editorRepo, revisionRepo)
 	resyncUC := resync.New(syncStateRepo, deadLetterRepo, syncSvc, cfg.Locales)
 
-	bot, err := discord.New(cfg.DiscordBotToken, earningsUC, revisionsUC, resyncUC, cfg.WikiRoleID, cfg.WikiAdminRoleID)
+	bot, err := discord.New(
+		cfg.DiscordBotToken,
+		earningsUC,
+		revisionsUC,
+		resyncUC,
+		cfg.WikiRoleID,
+		cfg.WikiAdminRoleID,
+		cfg.MessageLifetime,
+	)
 	if err != nil {
 		return err
 	}

@@ -6,16 +6,16 @@ force-file-write: true
 structname: "{{.Mock}}{{.InterfaceName}}"
 template: testify
 packages:
-  github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings:
+  github.com/the-new-day/wiki-earnings/internal/usecase/earnings:
     interfaces:
       EditorReader: {}
       RevisionReader: {}
       Syncer: {}
-  github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions:
+  github.com/the-new-day/wiki-earnings/internal/usecase/revisions:
     interfaces:
       EditorReader: {}
       RevisionStore: {}
-  github.com/the-new-day/protanki-wiki-admin/internal/sync:
+  github.com/the-new-day/wiki-earnings/internal/sync:
     interfaces:
       WikiClient: {}
       EditorRegistry: {}

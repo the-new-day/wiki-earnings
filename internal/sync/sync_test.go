@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
-	wikisync "github.com/the-new-day/protanki-wiki-admin/internal/sync"
-	"github.com/the-new-day/protanki-wiki-admin/internal/sync/mocks"
+	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
+	wikisync "github.com/the-new-day/wiki-earnings/internal/sync"
+	"github.com/the-new-day/wiki-earnings/internal/sync/mocks"
 )
 
 const locale = "ru"

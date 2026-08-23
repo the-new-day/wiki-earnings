@@ -6,7 +6,7 @@ package mocks
 
 import (
 	mock "github.com/stretchr/testify/mock"
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
+	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
 )
 
 // NewMockPricer creates a new instance of MockPricer. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

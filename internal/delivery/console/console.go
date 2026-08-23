@@ -11,9 +11,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/resync"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/earnings"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/resync"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/revisions"
 )
 
 // Syncer runs the pipeline on demand. The bot only ever syncs as a side effect

@@ -8,7 +8,7 @@ import (
 	"context"
 
 	mock "github.com/stretchr/testify/mock"
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
+	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
 )
 
 // NewMockEditorReader creates a new instance of MockEditorReader. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

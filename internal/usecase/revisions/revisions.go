@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
+	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
 )
 
 var ErrLocaleRequired = errors.New("revisions: locale required")

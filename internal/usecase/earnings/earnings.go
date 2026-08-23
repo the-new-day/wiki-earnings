@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
+	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
 )
 
 // ErrEmptyPeriod is returned for a period that cannot contain anything.
@@ -61,7 +61,6 @@ type Report struct {
 	SyncErr error
 }
 
-// UseCase serves earnings queries.
 type UseCase struct {
 	editors   EditorReader
 	revisions RevisionReader

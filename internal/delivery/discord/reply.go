@@ -6,8 +6,8 @@ import (
 	"log"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/the-new-day/protanki-wiki-admin/internal/storage"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
+	"github.com/the-new-day/wiki-earnings/internal/storage"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/revisions"
 )
 
 func (b *Bot) replyTextEphemeral(i *discordgo.InteractionCreate, content string) {
@@ -26,7 +26,7 @@ func (b *Bot) replyTextEphemeral(i *discordgo.InteractionCreate, content string)
 // deferReply acknowledges the interaction immediately with a "thinking..."
 // placeholder, buying up to 15 minutes to edit in the real response instead
 // of the default 3 seconds.
-func (b *Bot) deferReply(i *discordgo.InteractionCreate, ephemeral bool) bool {
+func (b *Bot) deferReply(i *discordgo.InteractionCreate, ephemeral bool) (ok bool) {
 	resp := &discordgo.InteractionResponse{Type: discordgo.InteractionResponseDeferredChannelMessageWithSource}
 	if ephemeral {
 		resp.Data = &discordgo.InteractionResponseData{Flags: discordgo.MessageFlagsEphemeral}
@@ -40,15 +40,15 @@ func (b *Bot) deferReply(i *discordgo.InteractionCreate, ephemeral bool) bool {
 	return true
 }
 
-// errorText maps err to something worth putting in front of the user. The
-// second result is false when there is no such explanation - the caller should
-// log those and leave the user with the generic apology.
-func errorText(err error) (string, bool) {
+// errorText maps err to something worth putting in front of the user.
+func errorText(err error) (text string, hasExplanation bool) {
 	switch {
 	case errors.Is(err, revisions.ErrLocaleRequired):
 		return fmt.Sprintf("%v. This editor has multiple accounts. Specify the locale and repeat the command.", err), true
 	case errors.Is(err, storage.ErrNotFound):
 		return "The editor or the edit not found.", true
+	case errors.Is(err, ErrNoTaskChannels):
+		return "No task channels are configured. Configure and restart the bot.", true
 	case errors.Is(err, ErrWrongMonthLayout):
 		return "Wrong month layout. Use YYYY-MM, for example 2026-08.", true
 	default:
@@ -56,11 +56,8 @@ func errorText(err error) (string, bool) {
 	}
 }
 
-// reply is the set of messages one interaction's answer is spread across: the
-// deferred response, plus a followup for every extra piece Discord's length
-// cap forces. It remembers what it has already posted, so rewriting reuses
-// those messages and drops the ones the new text no longer fills - an interim
-// update followed by a longer final answer leaves no stale fragments behind.
+// reply is the set of messages one interaction's answer is spread across: the deferred response,
+// plus a followup for every extra piece Discord's lengthcap forces.
 type reply struct {
 	bot         *Bot
 	interaction *discordgo.InteractionCreate
@@ -96,9 +93,7 @@ func (r *reply) setText(content string) {
 	r.trimFollowups(len(rest))
 }
 
-// writeFollowups edits the followups already posted and creates the ones still
-// missing. A failure stops it: the trailing pieces would be out of order
-// anyway, and trimFollowups still gets to clean up after it.
+// writeFollowups edits the followups already posted and creates the ones still missing.
 func (r *reply) writeFollowups(chunks []string) {
 	for idx, chunk := range chunks {
 		if idx < len(r.followupIDs) {
@@ -149,10 +144,6 @@ func (r *reply) trimFollowups(keep int) {
 func (r *reply) remove() {
 	r.trimFollowups(0)
 
-	// An ephemeral message exists only through the interaction, and so does a
-	// placeholder that was never edited into a real message. Anything else
-	// goes through the channel, which keeps working once the interaction
-	// token expires 15 minutes in - a message lifetime can outlast it.
 	if r.ephemeral || r.rootID == "" {
 		if err := r.bot.session.InteractionResponseDelete(r.interaction.Interaction); err != nil {
 			log.Printf("discord: delete reply: %v", err)
@@ -167,10 +158,7 @@ func (r *reply) remove() {
 }
 
 // fail tells the user privately what went wrong and takes the reply down,
-// placeholder included. The error goes out as a followup because deferReply
-// has already acknowledged the interaction and Discord rejects a second
-// response; it is sent before the cleanup so that a failure to delete still
-// leaves the user with an explanation rather than a stuck "thinking...".
+// placeholder included.
 func (r *reply) fail(err error) {
 	text, known := errorText(err)
 	if !known {

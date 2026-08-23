@@ -7,9 +7,11 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/resync"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
+	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/earnings"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/resync"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/revisions"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/tasks"
 )
 
 var commands = []*discordgo.ApplicationCommand{}
@@ -18,15 +20,26 @@ func init() {
 	registerCommands()
 }
 
+// TaskConfig is what the bot needs to serve /task: how to translate the text,
+// which languages to translate it into, and where each language's text goes.
+type TaskConfig struct {
+	Translator tasks.Translator
+	Languages  []entity.Language
+	Channels   map[entity.Language][]string
+}
+
 type Bot struct {
 	session *discordgo.Session
 
 	earnings  *earnings.UseCase
 	revisions *revisions.UseCase
 	resync    *resync.UseCase
+	tasks     *tasks.UseCase
 
 	wikiRoleID      string
 	wikiAdminRoleID string
+
+	taskChannels map[entity.Language][]string
 }
 
 // New creates a session and wires up handlers. It doesn't connect yet — call Run for that.
@@ -37,6 +50,7 @@ func New(
 	resyncUC *resync.UseCase,
 	wikiRoleID, wikiAdminRoleID string,
 	messageLifetime time.Duration,
+	taskCfg TaskConfig,
 ) (*Bot, error) {
 	session, err := discordgo.New("Bot " + token)
 	if err != nil {
@@ -52,7 +66,13 @@ func New(
 		resync:          resyncUC,
 		wikiRoleID:      wikiRoleID,
 		wikiAdminRoleID: wikiAdminRoleID,
+		taskChannels:    taskCfg.Channels,
 	}
+
+	// The bot is both what triggers a task and where it lands, so it builds the
+	// use case itself. Wiring it from outside would need the bot to exist first
+	// and then be handed the use case, leaving a window where /task panics.
+	bot.tasks = tasks.New(taskCfg.Translator, bot, taskCfg.Languages)
 	session.AddHandler(bot.handleReady)
 	session.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		bot.handleInteractionCreate(i, messageLifetime)
@@ -139,6 +159,18 @@ func registerCommands() {
 					Type:        discordgo.ApplicationCommandOptionString,
 					Name:        "month",
 					Description: "Month in YYYY-MM format, current by default",
+				},
+			},
+		},
+		{
+			Name:        "task",
+			Description: "Post a task for editors",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "text",
+					Description: "Text of the task",
+					Required:    true,
 				},
 			},
 		},

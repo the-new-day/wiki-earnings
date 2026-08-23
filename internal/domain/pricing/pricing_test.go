@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/pricing"
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/pricing/metric"
+	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
+	"github.com/the-new-day/wiki-earnings/internal/domain/pricing"
+	"github.com/the-new-day/wiki-earnings/internal/domain/pricing/metric"
 )
 
 func noQualityPricer() *pricing.Pricer {

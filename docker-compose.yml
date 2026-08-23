@@ -1,4 +1,4 @@
-name: protanki-wiki-admin
+name: wiki-earnings
 
 x-postgres-env: &postgres-env
   POSTGRES_HOST: postgres

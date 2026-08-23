@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
-	"github.com/the-new-day/protanki-wiki-admin/internal/mediawiki"
+	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
+	"github.com/the-new-day/wiki-earnings/internal/mediawiki"
 )
 
 // change is one edit on its way through the pipeline. It comes either from the

@@ -7,11 +7,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
-	"github.com/the-new-day/protanki-wiki-admin/internal/storage"
-	"github.com/the-new-day/protanki-wiki-admin/internal/sync"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
+	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
+	"github.com/the-new-day/wiki-earnings/internal/storage"
+	"github.com/the-new-day/wiki-earnings/internal/sync"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/earnings"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/revisions"
 )
 
 var (

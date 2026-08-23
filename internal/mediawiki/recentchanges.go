@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
+	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
 )
 
 const recentChangesQueryString = "/api.php?action=query&list=recentchanges" +

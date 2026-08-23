@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/pricing"
-	"github.com/the-new-day/protanki-wiki-admin/internal/mediawiki"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings"
+	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
+	"github.com/the-new-day/wiki-earnings/internal/domain/pricing"
+	"github.com/the-new-day/wiki-earnings/internal/mediawiki"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/earnings"
 )
 
 const monthLayout = "2006-01"
@@ -47,6 +47,8 @@ func (b *Bot) handleInteractionCreate(
 		b.runGated(i, data, []string{b.wikiRoleID, b.wikiAdminRoleID}, true, b.handleSalary, 0)
 	case "edits":
 		b.runGated(i, data, []string{b.wikiRoleID, b.wikiAdminRoleID}, false, b.handleEdits, messageLifetime)
+	case "task":
+		b.runGated(i, data, []string{b.wikiAdminRoleID}, true, b.handleTask, 0)
 	case "report":
 		b.runGated(i, data, []string{b.wikiAdminRoleID}, false, b.handleReport, 0)
 	case "changepay":
@@ -208,6 +210,24 @@ func formatEdits(nickname string, from time.Time, payslip earnings.Payslip, show
 	fmt.Fprint(&result, body.String())
 
 	return result.String()
+}
+
+// handleTask posts a task to every configured locale. The text is written in
+// Russian - that is the language the editors it is addressed to write in, and
+// everything else is a translation of it.
+func (b *Bot) handleTask(
+	ctx context.Context,
+	i *discordgo.InteractionCreate,
+	data discordgo.ApplicationCommandInteractionData,
+	_ func(string),
+) (string, error) {
+	text := data.GetOption("text").StringValue()
+
+	if err := b.tasks.PostTask(ctx, text, entity.LangRU); err != nil {
+		return "", err
+	}
+
+	return "Task posted.", nil
 }
 
 func (b *Bot) handleReport(

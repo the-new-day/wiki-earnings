@@ -3,8 +3,8 @@ package pricing
 import (
 	"strings"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/pricing/metric"
+	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
+	"github.com/the-new-day/wiki-earnings/internal/domain/pricing/metric"
 )
 
 // Flat rates for edit types that are not worth scoring.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
+	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
 )
 
 // Client exposes the package functions as methods so callers can depend on an

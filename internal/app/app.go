@@ -5,14 +5,14 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/config"
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/pricing"
-	"github.com/the-new-day/protanki-wiki-admin/internal/mediawiki"
-	"github.com/the-new-day/protanki-wiki-admin/internal/storage/postgres"
-	"github.com/the-new-day/protanki-wiki-admin/internal/sync"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/earnings"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/resync"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
+	"github.com/the-new-day/wiki-earnings/internal/config"
+	"github.com/the-new-day/wiki-earnings/internal/domain/pricing"
+	"github.com/the-new-day/wiki-earnings/internal/mediawiki"
+	"github.com/the-new-day/wiki-earnings/internal/storage/postgres"
+	"github.com/the-new-day/wiki-earnings/internal/sync"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/earnings"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/resync"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/revisions"
 )
 
 type App struct {

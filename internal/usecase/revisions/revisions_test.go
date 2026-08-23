@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions"
-	"github.com/the-new-day/protanki-wiki-admin/internal/usecase/revisions/mocks"
+	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/revisions"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/revisions/mocks"
 )
 
 var (

@@ -1,4 +1,4 @@
-module github.com/the-new-day/protanki-wiki-admin
+module github.com/the-new-day/wiki-earnings
 
 go 1.26.5
 

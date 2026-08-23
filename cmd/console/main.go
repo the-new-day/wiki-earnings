@@ -5,9 +5,9 @@ import (
 	"log"
 	"os"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/app"
-	"github.com/the-new-day/protanki-wiki-admin/internal/config"
-	"github.com/the-new-day/protanki-wiki-admin/internal/delivery/console"
+	"github.com/the-new-day/wiki-earnings/internal/app"
+	"github.com/the-new-day/wiki-earnings/internal/config"
+	"github.com/the-new-day/wiki-earnings/internal/delivery/console"
 )
 
 func main() {

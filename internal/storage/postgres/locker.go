@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/the-new-day/protanki-wiki-admin/internal/sync"
+	"github.com/the-new-day/wiki-earnings/internal/sync"
 )
 
 var _ sync.Locker = (*Locker)(nil)

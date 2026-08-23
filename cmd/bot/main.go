@@ -7,10 +7,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/app"
-	"github.com/the-new-day/protanki-wiki-admin/internal/config"
-	"github.com/the-new-day/protanki-wiki-admin/internal/delivery/discord"
-	"github.com/the-new-day/protanki-wiki-admin/internal/sync"
+	"github.com/the-new-day/wiki-earnings/internal/app"
+	"github.com/the-new-day/wiki-earnings/internal/config"
+	"github.com/the-new-day/wiki-earnings/internal/delivery/discord"
+	"github.com/the-new-day/wiki-earnings/internal/sync"
+	"github.com/the-new-day/wiki-earnings/internal/translate"
 )
 
 func main() {
@@ -38,13 +39,18 @@ func run() error {
 		cfg.Postgres.Host, cfg.Postgres.Port, cfg.Postgres.Database, cfg.Locales)
 
 	bot, err := discord.New(
-		cfg.DiscordBotToken,
+		cfg.Discord.BotToken,
 		a.Earnings,
 		a.Revisions,
 		a.Resync,
-		cfg.WikiRoleID,
-		cfg.WikiAdminRoleID,
+		cfg.Discord.WikiRoleID,
+		cfg.Discord.WikiAdminRoleID,
 		cfg.MessageLifetime,
+		discord.TaskConfig{
+			Translator: translate.NewPassthrough(),
+			Languages:  cfg.TaskLanguages(),
+			Channels:   cfg.TaskChannels(),
+		},
 	)
 	if err != nil {
 		return err

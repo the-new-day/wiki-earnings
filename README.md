@@ -74,6 +74,7 @@ it is shown first, tagged "Refreshing with latest edits…", and replaced once t
 | `/report [month]` | Wiki Admin | public | What every editor earned that month |
 | `/commands [month]` | Wiki Admin | public | Ready-to-paste `/givecry` and `/addpremium` lines |
 | `/changepay <nickname> <edit_id> <new_cost> [locale]` | Wiki Admin | ephemeral | Reprice one revision by hand |
+| `/task <text>` | Wiki Admin | ephemeral | Translate a task and post it to every locale's channel |
 | `/resync` | Wiki Admin | ephemeral | Wipe sync state and recompute from scratch |
 
 Details:
@@ -85,6 +86,9 @@ Details:
   `edit_id` is unique within one wiki, not across them. Left out and ambiguous, the bot asks for it.
   A manual price overrides anything computed, flat rates included, and is journalled in
   `revision_price_overrides` along with who set it.
+- **`/task`** takes the text in Russian, translates it once per language in `TASK_TARGETS`, and posts
+  each translation to the channels of the locales behind that language. Locales sharing a language
+  share one translation and get their own message.
 - **`/resync`** clears the cursors and the dead letter for every locale and syncs again from scratch.
   Manual prices survive it. It is slow and hits the wiki hard — for emergencies only.
 - **Long answers.** Discord rejects a message over 2000 characters, so answers are cut on line
@@ -221,6 +225,7 @@ works as long as the three required variables are in the environment. `.env.exam
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `LOCALES` | `ru,ua,en,br` | Language wikis to read, comma separated |
+| `TASK_TARGETS` | none | Where `/task` posts: `<locale>:<language>:<channel id>` per locale, comma separated. A locale left out receives no tasks |
 | `SYNC_BATCH_SIZE` | `500` | Revisions per request to the wiki (MediaWiki's ceiling) |
 | `INITIAL_LOOKBACK` | `720h` | How far back a locale starts with no cursor |
 | `SYNC_MIN_INTERVAL` | `1m` | How long a locale is left alone after a sync |

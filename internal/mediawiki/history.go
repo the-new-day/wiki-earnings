@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/the-new-day/protanki-wiki-admin/internal/domain/entity"
+	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
 	"golang.org/x/sync/errgroup"
 )
 

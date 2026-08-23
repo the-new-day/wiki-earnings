@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/the-new-day/protanki-wiki-admin/internal/config"
+	"github.com/the-new-day/wiki-earnings/internal/config"
 )
 
 // Connect opens a pool and proves it works before handing it back, so a bad

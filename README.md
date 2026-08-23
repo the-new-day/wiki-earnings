@@ -11,6 +11,7 @@ crystals; every 20 000 crystals also earn the editor a day of premium.
 
 - [How it works](#how-it-works)
 - [Bot commands](#bot-commands)
+- [Translation](#translation)
 - [Pricing](#pricing)
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
@@ -74,7 +75,7 @@ it is shown first, tagged "Refreshing with latest edits…", and replaced once t
 | `/report [month]` | Wiki Admin | public | What every editor earned that month |
 | `/commands [month]` | Wiki Admin | public | Ready-to-paste `/givecry` and `/addpremium` lines |
 | `/changepay <nickname> <edit_id> <new_cost> [locale]` | Wiki Admin | ephemeral | Reprice one revision by hand |
-| `/task <text>` | Wiki Admin | ephemeral | Translate a task and post it to every locale's channel |
+| `/task <text> [source_lang]` | Wiki Admin | ephemeral | Translate a task and post it to every locale's channel |
 | `/resync` | Wiki Admin | ephemeral | Wipe sync state and recompute from scratch |
 
 Details:
@@ -86,9 +87,14 @@ Details:
   `edit_id` is unique within one wiki, not across them. Left out and ambiguous, the bot asks for it.
   A manual price overrides anything computed, flat rates included, and is journalled in
   `revision_price_overrides` along with who set it.
-- **`/task`** takes the text in Russian, translates it once per language in `TASK_TARGETS`, and posts
-  each translation to the channels of the locales behind that language. Locales sharing a language
-  share one translation and get their own message.
+- **`/task`** translates the text once per language in `TASK_TARGETS` and posts each translation to
+  the channels of the locales behind that language. Locales sharing a language share one translation
+  and get their own message; the language the text was written in is posted as it stands, untouched.
+  A translation that fails stops the whole post: quietly sending the original to a channel that
+  expects another language is worse than not sending.
+- **`source_lang`** says which language the task is written in. It defaults to Russian and offers
+  every language the service knows, so an English-speaking admin can write in English and have the
+  Russian channels translated instead.
 - **`/resync`** clears the cursors and the dead letter for every locale and syncs again from scratch.
   Manual prices survive it. It is slow and hits the wiki hard — for emergencies only.
 - **Long answers.** Discord rejects a message over 2000 characters, so answers are cut on line
@@ -97,6 +103,28 @@ Details:
 - **Lifetime.** With `MESSAGE_LIFETIME` set, the `/edits` answer is deleted after that long, follow-up
   messages included.
 - **Errors** arrive as a separate ephemeral message, and the "thinking…" placeholder is taken down.
+
+## Translation
+
+`/task` is translated once per target language before it is posted, out of whatever language it was
+written in - Russian unless `source_lang` says otherwise. The
+translation runs through [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/),
+model `@cf/meta/m2m100-1.2b`, over plain HTTP - no SDK, no infrastructure.
+
+It is on Workers AI because a free Cloudflare account is enough to use it: no payment method, and
+the free daily allowance is worth several hundred task translations, against the handful a day this
+actually posts. To set it up, create a Cloudflare account, take the account ID from the Workers AI
+page of the dashboard, create a token with "Create a Workers AI API Token" (permissions: Workers AI
+Read and Edit), and put both in `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`. Load refuses to
+start if `TASK_TARGETS` is set without them, so a half-configured bot says so at startup rather than
+on the first `/task`.
+
+Requests are retried on network trouble and 5xx, but not on 4xx: a rejected token or a spent daily
+allowance will not come right in a few seconds.
+
+Swapping backends is a one-file job - the use case depends on the `Translator` interface, and
+`internal/translate` also carries a `Passthrough` that hands the text back untouched, for running
+locally without a token.
 
 ## Pricing
 
@@ -226,6 +254,8 @@ works as long as the three required variables are in the environment. `.env.exam
 | --- | --- | --- |
 | `LOCALES` | `ru,ua,en,br` | Language wikis to read, comma separated |
 | `TASK_TARGETS` | none | Where `/task` posts: `<locale>:<language>:<channel id>` per locale, comma separated. A locale left out receives no tasks |
+| `CLOUDFLARE_ACCOUNT_ID` | none | Workers AI account `/task` translates through. Required once `TASK_TARGETS` is set |
+| `CLOUDFLARE_API_TOKEN` | none | Workers AI token, with the Workers AI Read and Edit permissions |
 | `SYNC_BATCH_SIZE` | `500` | Revisions per request to the wiki (MediaWiki's ceiling) |
 | `INITIAL_LOOKBACK` | `720h` | How far back a locale starts with no cursor |
 | `SYNC_MIN_INTERVAL` | `1m` | How long a locale is left alone after a sync |
@@ -270,6 +300,7 @@ internal/
     pricing/metric/    Quality metrics
   sync/                The pipeline: cursors, batches, dead letter, replay
   mediawiki/           Wiki HTTP client with retries, and response parsing
+  translate/           Translation backends behind one interface
   storage/postgres/    Repositories and the advisory locker
 migrations/            SQL migrations (golang-migrate)
 ```

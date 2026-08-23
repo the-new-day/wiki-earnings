@@ -20,6 +20,15 @@ func required(t *testing.T) {
 	t.Setenv("WIKI_ADMIN_ROLE_ID", "2")
 }
 
+// tasks adds the credentials Load demands as soon as anything is set up to
+// receive tasks.
+func tasks(t *testing.T) {
+	t.Helper()
+
+	t.Setenv("CLOUDFLARE_ACCOUNT_ID", "account")
+	t.Setenv("CLOUDFLARE_API_TOKEN", "token")
+}
+
 func TestLoad_Locales(t *testing.T) {
 	required(t)
 	t.Setenv("LOCALES", "ru, ua ,en,")
@@ -49,6 +58,7 @@ func TestLoad_LocalesRejectsBadInput(t *testing.T) {
 
 func TestLoad_TaskTargets(t *testing.T) {
 	required(t)
+	tasks(t)
 	t.Setenv("LOCALES", "ru,ua,en,br")
 	t.Setenv("TASK_TARGETS", "ru:ru:100, ua:ru:200, en:en:300, br:en:400")
 
@@ -66,6 +76,7 @@ func TestLoad_TaskTargets(t *testing.T) {
 // A locale nobody wants tasks for is left out rather than given a blank channel.
 func TestLoad_TaskTargetsMaySkipLocales(t *testing.T) {
 	required(t)
+	tasks(t)
 	t.Setenv("LOCALES", "ru,ua,en,br")
 	t.Setenv("TASK_TARGETS", "ru:ru:100")
 
@@ -101,6 +112,7 @@ func TestLoad_TaskTargetsRejectBadInput(t *testing.T) {
 // Locales sharing a language are translated once, not once each.
 func TestTaskLanguages_DedupesInLocaleOrder(t *testing.T) {
 	required(t)
+	tasks(t)
 	t.Setenv("LOCALES", "ru,ua,en,br")
 	t.Setenv("TASK_TARGETS", "br:en:400, ua:ru:200, en:en:300, ru:ru:100")
 
@@ -122,6 +134,7 @@ func TestTaskLanguages_EmptyWithoutTargets(t *testing.T) {
 // Locales sharing a language each keep their own channel.
 func TestTaskChannels_GroupsLocalesByLanguage(t *testing.T) {
 	required(t)
+	tasks(t)
 	t.Setenv("LOCALES", "ru,ua,en,br")
 	t.Setenv("TASK_TARGETS", "ru:ru:100, ua:ru:200, en:en:300, br:en:400")
 
@@ -132,4 +145,25 @@ func TestTaskChannels_GroupsLocalesByLanguage(t *testing.T) {
 		entity.LangRU: {"100", "200"},
 		entity.LangEN: {"300", "400"},
 	}, cfg.TaskChannels())
+}
+
+// Task targets without a translator behind them would fail on the first /task,
+// so Load says so at startup instead.
+func TestLoad_TaskTargetsNeedCloudflareCredentials(t *testing.T) {
+	required(t)
+	t.Setenv("LOCALES", "ru,en")
+	t.Setenv("TASK_TARGETS", "en:en:100")
+
+	_, err := config.Load()
+
+	assert.ErrorContains(t, err, "CLOUDFLARE_ACCOUNT_ID")
+}
+
+// Without task targets there is nothing to translate, so they stay optional.
+func TestLoad_NoTaskTargetsNeedsNoCredentials(t *testing.T) {
+	required(t)
+
+	_, err := config.Load()
+
+	assert.NoError(t, err)
 }

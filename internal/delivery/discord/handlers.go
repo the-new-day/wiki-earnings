@@ -212,9 +212,9 @@ func formatEdits(nickname string, from time.Time, payslip earnings.Payslip, show
 	return result.String()
 }
 
-// handleTask posts a task to every configured locale. The text is written in
-// Russian - that is the language the editors it is addressed to write in, and
-// everything else is a translation of it.
+// handleTask posts a task to every configured locale, translated out of the
+// language it was written in. That defaults to Russian, which is what most of
+// the people writing tasks use, but it is theirs to say.
 func (b *Bot) handleTask(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
@@ -223,7 +223,12 @@ func (b *Bot) handleTask(
 ) (string, error) {
 	text := data.GetOption("text").StringValue()
 
-	if err := b.tasks.PostTask(ctx, text, entity.LangRU); err != nil {
+	sourceLang, err := optionalLanguage(data, "source_lang", entity.LangRU)
+	if err != nil {
+		return "", err
+	}
+
+	if err := b.tasks.PostTask(ctx, text, sourceLang); err != nil {
 		return "", err
 	}
 
@@ -406,6 +411,27 @@ func optionalString(data discordgo.ApplicationCommandInteractionData, name strin
 	}
 
 	return opt.StringValue()
+}
+
+// optionalLanguage reads a language choice, falling back when the option was
+// left out. Discord only sends values the command was registered with, so an
+// unrecognised one means the command definition and this have drifted apart.
+func optionalLanguage(
+	data discordgo.ApplicationCommandInteractionData,
+	name string,
+	fallback entity.Language,
+) (entity.Language, error) {
+	code := optionalString(data, name)
+	if code == "" {
+		return fallback, nil
+	}
+
+	lang, ok := entity.ParseLanguage(code)
+	if !ok {
+		return 0, fmt.Errorf("discord: %s: unknown language %q", name, code)
+	}
+
+	return lang, nil
 }
 
 func optionalBool(data discordgo.ApplicationCommandInteractionData, name string) bool {

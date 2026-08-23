@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -121,6 +122,21 @@ func (b *Bot) handleMessageCreate(s *discordgo.Session, m *discordgo.MessageCrea
 	log.Printf("discord: [%s] %s: %s", m.ChannelID, m.Author.Username, m.Content)
 }
 
+// languageChoices offers every language the service knowse.
+func languageChoices() []*discordgo.ApplicationCommandOptionChoice {
+	langs := entity.Languages()
+	choices := make([]*discordgo.ApplicationCommandOptionChoice, 0, len(langs))
+
+	for _, lang := range langs {
+		choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+			Name:  strings.ToUpper(lang.String()),
+			Value: lang.String(),
+		})
+	}
+
+	return choices
+}
+
 func registerCommands() {
 	commands = []*discordgo.ApplicationCommand{
 		{
@@ -171,6 +187,12 @@ func registerCommands() {
 					Name:        "text",
 					Description: "Text of the task",
 					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "source_lang",
+					Description: "Language the text is written in, Russian by default",
+					Choices:     languageChoices(),
 				},
 			},
 		},

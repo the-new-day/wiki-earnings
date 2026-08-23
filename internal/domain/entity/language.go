@@ -1,6 +1,9 @@
 package entity
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // Language is a language a text is written in. Locales map onto it, many to
 // one: several wiki editions are commonly served in the same language, and a
@@ -17,6 +20,20 @@ const (
 var languageCodes = map[Language]string{
 	LangRU: "ru",
 	LangEN: "en",
+}
+
+// Languages is every language the service knows, ordered by their constants so
+// that anything rendering the list - a set of command choices, say - gets the
+// same order every run.
+func Languages() []Language {
+	langs := make([]Language, 0, len(languageCodes))
+	for lang := range languageCodes {
+		langs = append(langs, lang)
+	}
+
+	slices.Sort(langs)
+
+	return langs
 }
 
 // ParseLanguage resolves a language code such as "ru". The bool reports

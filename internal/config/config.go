@@ -31,6 +31,12 @@ type TaskTarget struct {
 	ChannelID string
 }
 
+// Cloudflare is the Workers AI account tasks are translated through.
+type Cloudflare struct {
+	AccountID string
+	APIToken  string
+}
+
 type Discord struct {
 	BotToken string
 
@@ -62,8 +68,9 @@ func (p Postgres) DSN() string {
 }
 
 type Config struct {
-	Postgres Postgres
-	Discord  Discord
+	Postgres   Postgres
+	Discord    Discord
+	Cloudflare Cloudflare
 
 	Locales []string
 
@@ -181,6 +188,9 @@ func Load() (Config, error) {
 	e.str(&cfg.Discord.WikiAdminRoleID, "WIKI_ADMIN_ROLE_ID")
 	e.duration(&cfg.MessageLifetime, "MESSAGE_LIFETIME")
 
+	e.str(&cfg.Cloudflare.AccountID, "CLOUDFLARE_ACCOUNT_ID")
+	e.str(&cfg.Cloudflare.APIToken, "CLOUDFLARE_API_TOKEN")
+
 	e.str(&cfg.Postgres.Host, "POSTGRES_HOST")
 	e.str(&cfg.Postgres.User, "POSTGRES_USER")
 	e.str(&cfg.Postgres.Password, "POSTGRES_PASSWORD")
@@ -217,6 +227,18 @@ func Load() (Config, error) {
 	}
 	if cfg.Discord.WikiAdminRoleID == "" {
 		return Config{}, fmt.Errorf("config: WIKI_ADMIN_ROLE_ID not set")
+	}
+
+	// Only needed once something is set up to receive tasks. Checked here
+	// rather than on the first /task, so a half-configured bot says so at
+	// startup instead of at the moment somebody needs it.
+	if len(cfg.Discord.TaskTargets) > 0 {
+		if cfg.Cloudflare.AccountID == "" {
+			return Config{}, fmt.Errorf("config: CLOUDFLARE_ACCOUNT_ID not set, but TASK_TARGETS is")
+		}
+		if cfg.Cloudflare.APIToken == "" {
+			return Config{}, fmt.Errorf("config: CLOUDFLARE_API_TOKEN not set, but TASK_TARGETS is")
+		}
 	}
 
 	return cfg, nil

@@ -59,4 +59,8 @@ services:
         condition: service_healthy
 
 volumes:
+  # Named explicitly rather than left to Compose, which prefixes volumes with
+  # the project name above: renaming the project would otherwise point the
+  # database at a fresh empty volume and look exactly like data loss.
   pgdata:
+    name: protanki-wiki-admin_pgdata

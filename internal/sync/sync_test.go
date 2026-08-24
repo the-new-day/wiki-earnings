@@ -547,42 +547,66 @@ func TestService_KeepsLocalesApart(t *testing.T) {
 }
 
 func TestService_Locking(t *testing.T) {
-	t.Run("a locale somebody else is already on is left to them", func(t *testing.T) {
-		d := newDeps(t)
-		locker := mocks.NewMockLocker(t)
-		locker.EXPECT().TryLock(mock.Anything, mock.Anything).Return(false, nil, nil)
-		d.locker = locker
+	tests := []struct {
+		name         string
+		locked       bool
+		lockErr      error
+		arrange      func(*deps)
+		wantErr      error
+		wantReleased bool
+	}{
+		{
+			name: "a locale somebody else is already on is left to them",
+			// Neither the state nor the wiki is set up: a locale we did not
+			// claim must not be touched at all.
+			arrange: func(d *deps) {},
+		},
+		{
+			name:   "the lock is handed back when the pass is over",
+			locked: true,
+			arrange: func(d *deps) {
+				d.storedAt(entity.SyncState{LastEditedAt: firstEdit})
+				d.wikiReturns(nil)
+				d.saves()
+			},
+			wantReleased: true,
+		},
+		{
+			name:    "a lock that cannot be taken is a failure, not a skip",
+			lockErr: errStore,
+			arrange: func(d *deps) {},
+			wantErr: errStore,
+		},
+	}
 
-		// Neither the state nor the wiki is set up: a locale we did not claim
-		// must not be touched at all.
-		require.NoError(t, d.service().Sync(context.Background()))
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var released atomic.Bool
 
-	t.Run("the lock is handed back when the pass is over", func(t *testing.T) {
-		d := newDeps(t)
-		var released atomic.Bool
+			var release func()
+			if tt.locked {
+				release = func() { released.Store(true) }
+			}
 
-		locker := mocks.NewMockLocker(t)
-		locker.EXPECT().TryLock(mock.Anything, mock.Anything).
-			Return(true, func() { released.Store(true) }, nil)
-		d.locker = locker
+			locker := mocks.NewMockLocker(t)
+			locker.EXPECT().TryLock(mock.Anything, mock.Anything).Return(tt.locked, release, tt.lockErr)
 
-		d.storedAt(entity.SyncState{LastEditedAt: firstEdit})
-		d.wikiReturns(nil)
-		d.saves()
+			d := newDeps(t)
+			d.locker = locker
+			tt.arrange(d)
 
-		require.NoError(t, d.service().Sync(context.Background()))
-		assert.True(t, released.Load(), "a lock held past the pass blocks every later sync")
-	})
+			err := d.service().Sync(context.Background())
 
-	t.Run("a lock that cannot be taken is a failure, not a skip", func(t *testing.T) {
-		d := newDeps(t)
-		locker := mocks.NewMockLocker(t)
-		locker.EXPECT().TryLock(mock.Anything, mock.Anything).Return(false, nil, errStore)
-		d.locker = locker
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
 
-		require.ErrorIs(t, d.service().Sync(context.Background()), errStore)
-	})
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantReleased, released.Load(),
+				"a lock held past the pass blocks every later sync")
+		})
+	}
 }
 
 func TestService_CollapsesConcurrentCalls(t *testing.T) {

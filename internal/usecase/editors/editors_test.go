@@ -16,69 +16,110 @@ import (
 	"github.com/the-new-day/wiki-earnings/internal/usecase/editors/mocks"
 )
 
-var editor = entity.Editor{EditorID: 7, Nickname: "tanker"}
+var (
+	errRepo = errors.New("repository is down")
 
-func TestSetPaymentsNickname_SetsIt(t *testing.T) {
-	repo := mocks.NewMockRepository(t)
-	repo.EXPECT().FindByNickname(mock.Anything, editor.Nickname).Return(editor, nil).Once()
-	repo.EXPECT().SetPaymentsNickname(mock.Anything, editor.EditorID, "Tanker_2007").Return(nil).Once()
+	editor = entity.Editor{EditorID: 7, Nickname: "tanker"}
+	paid   = entity.Editor{EditorID: 7, Nickname: "tanker", PaymentsNickname: "Tanker_2007"}
+)
 
-	got, err := editors.New(repo).SetPaymentsNickname(context.Background(), editor.Nickname, "Tanker_2007")
+// repo builds the mocked repository. It is built with the *testing.T, so an
+// unmet expectation fails the test at cleanup and a call nobody set up fails it
+// on the spot.
+func repo(t *testing.T) *mocks.MockRepository {
+	t.Helper()
 
-	require.NoError(t, err)
-	assert.Equal(t, "Tanker_2007", got.PaymentsNickname)
-	assert.Equal(t, editor.Nickname, got.Nickname)
+	return mocks.NewMockRepository(t)
 }
 
-func TestSetPaymentsNickname_EmptyClearsIt(t *testing.T) {
-	stored := entity.Editor{EditorID: 7, Nickname: "tanker", PaymentsNickname: "Tanker_2007"}
-
-	repo := mocks.NewMockRepository(t)
-	repo.EXPECT().FindByNickname(mock.Anything, stored.Nickname).Return(stored, nil).Once()
-	repo.EXPECT().SetPaymentsNickname(mock.Anything, stored.EditorID, "").Return(nil).Once()
-
-	got, err := editors.New(repo).SetPaymentsNickname(context.Background(), stored.Nickname, "")
-
-	require.NoError(t, err)
-	assert.Empty(t, got.PaymentsNickname)
+func found(stored entity.Editor) func(*mocks.MockRepository) {
+	return func(r *mocks.MockRepository) {
+		r.EXPECT().FindByNickname(mock.Anything, stored.Nickname).Return(stored, nil).Once()
+	}
 }
 
-func TestSetPaymentsNickname_TrimsSpaces(t *testing.T) {
-	repo := mocks.NewMockRepository(t)
-	repo.EXPECT().FindByNickname(mock.Anything, editor.Nickname).Return(editor, nil).Once()
-	repo.EXPECT().SetPaymentsNickname(mock.Anything, editor.EditorID, "Tanker_2007").Return(nil).Once()
+func TestUseCase_SetPaymentsNickname(t *testing.T) {
+	tests := []struct {
+		name             string
+		wikiNickname     string
+		paymentsNickname string
+		arrange          func(*mocks.MockRepository)
+		want             string
+		wantErr          error
+	}{
+		{
+			name:             "sets the account the editor is paid on",
+			wikiNickname:     editor.Nickname,
+			paymentsNickname: "Tanker_2007",
+			arrange: func(r *mocks.MockRepository) {
+				found(editor)(r)
+				r.EXPECT().SetPaymentsNickname(mock.Anything, editor.EditorID, "Tanker_2007").Return(nil).Once()
+			},
+			want: "Tanker_2007",
+		},
+		{
+			name:             "an empty nickname clears it",
+			wikiNickname:     paid.Nickname,
+			paymentsNickname: "",
+			arrange: func(r *mocks.MockRepository) {
+				found(paid)(r)
+				r.EXPECT().SetPaymentsNickname(mock.Anything, paid.EditorID, "").Return(nil).Once()
+			},
+			want: "",
+		},
+		{
+			name:             "surrounding spaces are trimmed",
+			wikiNickname:     editor.Nickname,
+			paymentsNickname: "  Tanker_2007  ",
+			arrange: func(r *mocks.MockRepository) {
+				found(editor)(r)
+				r.EXPECT().SetPaymentsNickname(mock.Anything, editor.EditorID, "Tanker_2007").Return(nil).Once()
+			},
+			want: "Tanker_2007",
+		},
+		{
+			name:             "a nickname longer than the column is refused before the lookup",
+			wikiNickname:     editor.Nickname,
+			paymentsNickname: strings.Repeat("a", 256),
+			arrange:          func(r *mocks.MockRepository) {},
+			wantErr:          editors.ErrNicknameTooLong,
+		},
+		{
+			name:             "an unknown editor is reported",
+			wikiNickname:     "ghost",
+			paymentsNickname: "Tanker_2007",
+			arrange: func(r *mocks.MockRepository) {
+				r.EXPECT().FindByNickname(mock.Anything, "ghost").Return(entity.Editor{}, storage.ErrNotFound).Once()
+			},
+			wantErr: storage.ErrNotFound,
+		},
+		{
+			name:             "a failed write is reported",
+			wikiNickname:     editor.Nickname,
+			paymentsNickname: "Tanker_2007",
+			arrange: func(r *mocks.MockRepository) {
+				found(editor)(r)
+				r.EXPECT().SetPaymentsNickname(mock.Anything, editor.EditorID, "Tanker_2007").Return(errRepo).Once()
+			},
+			wantErr: errRepo,
+		},
+	}
 
-	got, err := editors.New(repo).SetPaymentsNickname(context.Background(), editor.Nickname, "  Tanker_2007  ")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := repo(t)
+			tt.arrange(r)
 
-	require.NoError(t, err)
-	assert.Equal(t, "Tanker_2007", got.PaymentsNickname)
-}
+			got, err := editors.New(r).SetPaymentsNickname(context.Background(), tt.wikiNickname, tt.paymentsNickname)
 
-func TestSetPaymentsNickname_RejectsTooLongNickname(t *testing.T) {
-	repo := mocks.NewMockRepository(t)
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
+				return
+			}
 
-	_, err := editors.New(repo).SetPaymentsNickname(context.Background(), editor.Nickname, strings.Repeat("a", 256))
-
-	assert.ErrorIs(t, err, editors.ErrNicknameTooLong)
-}
-
-func TestSetPaymentsNickname_PassesLookupFailureThrough(t *testing.T) {
-	repo := mocks.NewMockRepository(t)
-	repo.EXPECT().FindByNickname(mock.Anything, "ghost").Return(entity.Editor{}, storage.ErrNotFound).Once()
-
-	_, err := editors.New(repo).SetPaymentsNickname(context.Background(), "ghost", "Tanker_2007")
-
-	assert.ErrorIs(t, err, storage.ErrNotFound)
-}
-
-func TestSetPaymentsNickname_PassesWriteFailureThrough(t *testing.T) {
-	failure := errors.New("repository is down")
-
-	repo := mocks.NewMockRepository(t)
-	repo.EXPECT().FindByNickname(mock.Anything, editor.Nickname).Return(editor, nil).Once()
-	repo.EXPECT().SetPaymentsNickname(mock.Anything, editor.EditorID, "Tanker_2007").Return(failure).Once()
-
-	_, err := editors.New(repo).SetPaymentsNickname(context.Background(), editor.Nickname, "Tanker_2007")
-
-	assert.ErrorIs(t, err, failure)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got.PaymentsNickname)
+			assert.Equal(t, tt.wikiNickname, got.Nickname)
+		})
+	}
 }

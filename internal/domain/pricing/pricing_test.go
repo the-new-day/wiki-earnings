@@ -14,88 +14,113 @@ func noQualityPricer() *pricing.Pricer {
 	return pricing.New(metric.NewVolume(metric.DefaultVolumeCap, metric.DefaultVolumeTableCellWeight))
 }
 
-func payableInfo() entity.ArticleInfo {
-	return entity.ArticleInfo{Words: make([]string, 200)}
+func payableInfo() *entity.ArticleInfo {
+	return &entity.ArticleInfo{Words: make([]string, 200)}
 }
 
-func withDidYouKnow(info entity.ArticleInfo) entity.ArticleInfo {
+func withDidYouKnow() *entity.ArticleInfo {
+	info := payableInfo()
 	info.Templates = append(info.Templates, pricing.DidYouKnowTemplate)
+
 	return info
 }
 
-func TestDidYouKnowBonus_NewArticle(t *testing.T) {
-	p := noQualityPricer()
+func TestPricer_DidYouKnowBonus(t *testing.T) {
+	tests := []struct {
+		name string
+		// The cost of prev -> curr is compared against the cost of the same
+		// work without the template, basePrev -> baseCurr.
+		revType   entity.RevisionType
+		prev      *entity.ArticleInfo
+		curr      *entity.ArticleInfo
+		basePrev  *entity.ArticleInfo
+		baseCurr  *entity.ArticleInfo
+		wantBonus bool
+	}{
+		{
+			name:      "a new article carrying the template is paid the bonus",
+			revType:   entity.NewArticle,
+			curr:      withDidYouKnow(),
+			baseCurr:  payableInfo(),
+			wantBonus: true,
+		},
+		{
+			name:      "a translated article carrying the template is paid the bonus",
+			revType:   entity.TranslatedArticle,
+			curr:      withDidYouKnow(),
+			baseCurr:  payableInfo(),
+			wantBonus: true,
+		},
+		{
+			name:      "an edit that adds the template is paid the bonus",
+			revType:   entity.ArticleEdit,
+			prev:      payableInfo(),
+			curr:      withDidYouKnow(),
+			basePrev:  payableInfo(),
+			baseCurr:  payableInfo(),
+			wantBonus: true,
+		},
+		{
+			name:      "an edit that leaves the template where it was is not paid again",
+			revType:   entity.ArticleEdit,
+			prev:      withDidYouKnow(),
+			curr:      withDidYouKnow(),
+			basePrev:  payableInfo(),
+			baseCurr:  payableInfo(),
+			wantBonus: false,
+		},
+		{
+			name:      "an edit that removes the template is not paid the bonus",
+			revType:   entity.ArticleEdit,
+			prev:      withDidYouKnow(),
+			curr:      payableInfo(),
+			basePrev:  payableInfo(),
+			baseCurr:  payableInfo(),
+			wantBonus: false,
+		},
+	}
 
-	withTemplate := withDidYouKnow(payableInfo())
-	withoutTemplate := payableInfo()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := noQualityPricer()
 
-	costWith := p.Cost(entity.NewArticle, nil, &withTemplate)
-	costWithout := p.Cost(entity.NewArticle, nil, &withoutTemplate)
+			want := p.Cost(tt.revType, tt.basePrev, tt.baseCurr)
+			if tt.wantBonus {
+				want += pricing.DidYouKnowBonus
+			}
 
-	assert.Equal(t, costWithout+pricing.DidYouKnowBonus, costWith)
+			assert.Equal(t, want, p.Cost(tt.revType, tt.prev, tt.curr))
+		})
+	}
 }
 
-func TestDidYouKnowBonus_TranslatedArticle(t *testing.T) {
-	p := noQualityPricer()
+func TestPricer_MinPayment(t *testing.T) {
+	tiny := &entity.ArticleInfo{Words: []string{"один", "два", "три"}}
+	bigger := &entity.ArticleInfo{Words: make([]string, 800)}
+	smaller := &entity.ArticleInfo{Words: make([]string, 50)}
 
-	withTemplate := withDidYouKnow(payableInfo())
-	withoutTemplate := payableInfo()
+	tests := []struct {
+		name    string
+		revType entity.RevisionType
+		prev    *entity.ArticleInfo
+		curr    *entity.ArticleInfo
+	}{
+		{
+			name:    "an article with almost no content still earns the floor",
+			revType: entity.NewArticle,
+			curr:    tiny,
+		},
+		{
+			name:    "an edit that shrinks the article earns nothing beyond the floor",
+			revType: entity.ArticleEdit,
+			prev:    bigger,
+			curr:    smaller,
+		},
+	}
 
-	costWith := p.Cost(entity.TranslatedArticle, nil, &withTemplate)
-	costWithout := p.Cost(entity.TranslatedArticle, nil, &withoutTemplate)
-
-	assert.Equal(t, costWithout+pricing.DidYouKnowBonus, costWith)
-}
-
-func TestDidYouKnowBonus_EditAddsTemplate(t *testing.T) {
-	p := noQualityPricer()
-	prev := payableInfo()
-	curr := withDidYouKnow(payableInfo())
-
-	cost := p.Cost(entity.ArticleEdit, &prev, &curr)
-	baseline := p.Cost(entity.ArticleEdit, &prev, &prev)
-
-	assert.Equal(t, baseline+pricing.DidYouKnowBonus, cost)
-}
-
-func TestDidYouKnowBonus_EditKeepsExistingTemplate_NotPaidAgain(t *testing.T) {
-	p := noQualityPricer()
-	prev := withDidYouKnow(payableInfo())
-	curr := withDidYouKnow(payableInfo())
-
-	cost := p.Cost(entity.ArticleEdit, &prev, &curr)
-
-	assert.Equal(t, int64(pricing.MinPayment), cost)
-}
-
-func TestDidYouKnowBonus_EditRemovesTemplate_NoBonus(t *testing.T) {
-	p := noQualityPricer()
-	prev := withDidYouKnow(payableInfo())
-	curr := payableInfo()
-
-	cost := p.Cost(entity.ArticleEdit, &prev, &curr)
-
-	assert.Equal(t, int64(pricing.MinPayment), cost)
-}
-
-func TestArticleCost_TinyContent_StillGetsMinPayment(t *testing.T) {
-	p := pricing.Default()
-	tiny := entity.ArticleInfo{Words: []string{"один", "два", "три"}}
-
-	// MinPayment is unconditional by design: a human reviews every payout, so
-	// the pricer doesn't gate near-empty content down to zero.
-	assert.Equal(t, int64(pricing.MinPayment), p.Cost(entity.NewArticle, nil, &tiny))
-}
-
-func TestEditCost_NegativeDiffsEarnNothing_ButFloorStillApplies(t *testing.T) {
-	p := pricing.Default()
-	bigger := entity.ArticleInfo{Words: make([]string, 800)}
-	smaller := entity.ArticleInfo{Words: make([]string, 50)}
-
-	// An edit that shrinks both volume and quality should not be paid a
-	// negative-scaled "degradation" fee - it earns nothing on either axis,
-	// and the edit floor is all that is paid.
-	cost := p.Cost(entity.ArticleEdit, &bigger, &smaller)
-
-	assert.Equal(t, int64(pricing.MinPayment), cost)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, int64(pricing.MinPayment), pricing.Default().Cost(tt.revType, tt.prev, tt.curr))
+		})
+	}
 }

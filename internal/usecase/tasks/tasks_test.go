@@ -7,145 +7,236 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/tasks"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/tasks/mocks"
 )
 
-type translator struct {
-	calls int
-	err   error
-}
+const taskText = "fix the tanks page"
 
-func (t *translator) Translate(_ context.Context, text string, _, targetLang entity.Language) (string, error) {
-	t.calls++
-	if t.err != nil {
-		return "", t.err
+var (
+	errTranslator = errors.New("out of neurons")
+	errPoster     = errors.New("channel is gone")
+
+	allTargets = []tasks.Target{
+		{Locale: "ru", Language: entity.LangRU},
+		{Locale: "ua", Language: entity.LangRU},
+		{Locale: "en", Language: entity.LangEN},
+		{Locale: "br", Language: entity.LangEN},
 	}
+)
 
-	return text + " in " + targetLang.String(), nil
-}
+// deps holds the mocked collaborators. Every mock is built with the *testing.T,
+// so an unmet expectation fails the test at cleanup and a call nobody set up
+// fails it on the spot.
+type deps struct {
+	translator *mocks.MockTranslator
+	poster     *mocks.MockTaskPoster
 
-type poster struct {
 	posted map[string]string
-	calls  int
 }
 
-func (p *poster) PostTask(_ context.Context, localizedTexts map[string]string) error {
-	p.calls++
-	p.posted = localizedTexts
-
-	return nil
-}
-
-var targets = []tasks.Target{
-	{Locale: "ru", Language: entity.LangRU},
-	{Locale: "ua", Language: entity.LangRU},
-	{Locale: "en", Language: entity.LangEN},
-	{Locale: "br", Language: entity.LangEN},
-}
-
-func post(t *testing.T, tr *translator, locales []string) *poster {
+func newDeps(t *testing.T) *deps {
 	t.Helper()
 
-	sent := &poster{}
-	uc := tasks.New(tr, sent, targets)
-
-	require.NoError(t, uc.PostTask(context.Background(), "text", entity.LangRU, locales))
-
-	return sent
-}
-
-func TestPostTask_NoLocalesMeansAllOfThem(t *testing.T) {
-	sent := post(t, &translator{}, nil)
-
-	assert.Equal(t, map[string]string{
-		"ru": "text",
-		"ua": "text",
-		"en": "text in en",
-		"br": "text in en",
-	}, sent.posted)
-}
-
-func TestPostTask_PostsOnlyToTheLocalesAskedFor(t *testing.T) {
-	sent := post(t, &translator{}, []string{"en"})
-
-	assert.Equal(t, map[string]string{"en": "text in en"}, sent.posted)
-}
-
-func TestPostTask_PostsToASingleLocale(t *testing.T) {
-	sent := post(t, &translator{}, []string{"br"})
-
-	assert.Equal(t, map[string]string{"br": "text in en"}, sent.posted)
-}
-
-func TestPostTask_TranslatesOncePerLanguage(t *testing.T) {
-	tr := &translator{}
-
-	post(t, tr, []string{"en", "br"})
-
-	assert.Equal(t, 1, tr.calls)
-}
-
-func TestPostTask_LeavesTheSourceLanguageAlone(t *testing.T) {
-	tr := &translator{}
-
-	sent := post(t, tr, []string{"ru", "ua"})
-
-	assert.Equal(t, 0, tr.calls)
-	assert.Equal(t, map[string]string{"ru": "text", "ua": "text"}, sent.posted)
-}
-
-func TestPostTask_RefusesUnknownLocales(t *testing.T) {
-	sent := &poster{}
-	uc := tasks.New(&translator{}, sent, targets)
-
-	err := uc.PostTask(context.Background(), "text", entity.LangRU, []string{"ru", "de"})
-
-	assert.ErrorIs(t, err, tasks.ErrUnknownLocale)
-	assert.Zero(t, sent.calls)
-}
-
-func TestPostTask_UnknownLocaleNamesTheOnesThatWork(t *testing.T) {
-	uc := tasks.New(&translator{}, &poster{}, targets)
-
-	err := uc.PostTask(context.Background(), "text", entity.LangRU, []string{"de"})
-
-	require.Error(t, err)
-	for _, locale := range []string{"ru", "ua", "en", "br"} {
-		assert.Contains(t, err.Error(), locale)
+	return &deps{
+		translator: mocks.NewMockTranslator(t),
+		poster:     mocks.NewMockTaskPoster(t),
 	}
 }
 
-func TestPostTask_RefusesWithoutTargets(t *testing.T) {
-	uc := tasks.New(&translator{}, &poster{}, nil)
-
-	err := uc.PostTask(context.Background(), "text", entity.LangRU, nil)
-
-	assert.ErrorIs(t, err, tasks.ErrNoTargets)
-}
-func TestPostTask_FailedTranslationPostsNothing(t *testing.T) {
-	sent := &poster{}
-	uc := tasks.New(&translator{err: errors.New("out of neurons")}, sent, targets)
-
-	err := uc.PostTask(context.Background(), "text", entity.LangRU, nil)
-
-	assert.ErrorIs(t, err, tasks.ErrTranslationFailure)
-	assert.Zero(t, sent.calls)
+func (d *deps) useCase(targets []tasks.Target) *tasks.UseCase {
+	return tasks.New(d.translator, d.poster, targets)
 }
 
-func TestLocales_ListsTargetsInOrder(t *testing.T) {
-	uc := tasks.New(&translator{}, &poster{}, targets)
-
-	assert.Equal(t, []string{"ru", "ua", "en", "br"}, uc.Locales())
+// translatesInto marks the text with the language it was asked for, so a posted
+// text says where it came from.
+func (d *deps) translatesInto(lang entity.Language) {
+	d.translator.EXPECT().Translate(mock.Anything, taskText, entity.LangRU, lang).
+		Return(taskText+" in "+lang.String(), nil).Once()
 }
 
-func TestLocales_AreNotSharedWithTheCaller(t *testing.T) {
-	uc := tasks.New(&translator{}, &poster{}, targets)
+func (d *deps) translationFails() {
+	d.translator.EXPECT().Translate(mock.Anything, taskText, entity.LangRU, mock.Anything).
+		Return("", errTranslator).Once()
+}
 
-	locales := uc.Locales()
-	locales[0] = strings.ToUpper(locales[0])
+// accepts records what reached the poster.
+func (d *deps) accepts() {
+	d.poster.EXPECT().PostTask(mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, localizedTexts map[string]string) error {
+			d.posted = localizedTexts
+			return nil
+		}).Once()
+}
+
+func (d *deps) postFails() {
+	d.poster.EXPECT().PostTask(mock.Anything, mock.Anything).Return(errPoster).Once()
+}
+
+func TestUseCase_PostTask(t *testing.T) {
+	tests := []struct {
+		name            string
+		targets         []tasks.Target
+		locales         []string
+		arrange         func(*deps)
+		wantPosted      map[string]string
+		wantErr         error
+		wantErrMentions []string
+	}{
+		{
+			name: "no locales means all of them",
+			arrange: func(d *deps) {
+				d.translatesInto(entity.LangEN)
+				d.accepts()
+			},
+			wantPosted: map[string]string{
+				"ru": taskText,
+				"ua": taskText,
+				"en": taskText + " in en",
+				"br": taskText + " in en",
+			},
+		},
+		{
+			name:    "posts only to the locales asked for",
+			locales: []string{"en"},
+			arrange: func(d *deps) {
+				d.translatesInto(entity.LangEN)
+				d.accepts()
+			},
+			wantPosted: map[string]string{"en": taskText + " in en"},
+		},
+		{
+			name:    "posts to a single locale",
+			locales: []string{"br"},
+			arrange: func(d *deps) {
+				d.translatesInto(entity.LangEN)
+				d.accepts()
+			},
+			wantPosted: map[string]string{"br": taskText + " in en"},
+		},
+		{
+			name:    "locales sharing a language are translated once",
+			locales: []string{"en", "br"},
+			arrange: func(d *deps) {
+				d.translatesInto(entity.LangEN)
+				d.accepts()
+			},
+			wantPosted: map[string]string{
+				"en": taskText + " in en",
+				"br": taskText + " in en",
+			},
+		},
+		{
+			name:    "the language it was written in is not translated",
+			locales: []string{"ru", "ua"},
+			arrange: func(d *deps) {
+				d.accepts()
+			},
+			wantPosted: map[string]string{"ru": taskText, "ua": taskText},
+		},
+		{
+			name:    "an unknown locale stops the post",
+			locales: []string{"ru", "de"},
+			arrange: func(d *deps) {},
+			wantErr: tasks.ErrUnknownLocale,
+			// The locales are nowhere the person running the command can look
+			// them up.
+			wantErrMentions: []string{"ru", "ua", "en", "br"},
+		},
+		{
+			name:    "no locales are set up to receive tasks",
+			targets: []tasks.Target{},
+			arrange: func(d *deps) {},
+			wantErr: tasks.ErrNoTargets,
+		},
+		{
+			name: "a failed translation posts nothing",
+			arrange: func(d *deps) {
+				d.translationFails()
+			},
+			wantErr: tasks.ErrTranslationFailure,
+		},
+		{
+			name:    "a failed post is reported",
+			locales: []string{"ru"},
+			arrange: func(d *deps) {
+				d.postFails()
+			},
+			wantErr: tasks.ErrPostingFailure,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			targets := allTargets
+			if tt.targets != nil {
+				targets = tt.targets
+			}
+
+			d := newDeps(t)
+			tt.arrange(d)
+
+			err := d.useCase(targets).PostTask(context.Background(), taskText, entity.LangRU, tt.locales)
+
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				for _, mention := range tt.wantErrMentions {
+					assert.Contains(t, err.Error(), mention)
+				}
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantPosted, d.posted)
+		})
+	}
+}
+
+func TestUseCase_Locales(t *testing.T) {
+	tests := []struct {
+		name    string
+		targets []tasks.Target
+		want    []string
+	}{
+		{
+			name:    "lists the targets in configured order",
+			targets: allTargets,
+			want:    []string{"ru", "ua", "en", "br"},
+		},
+		{
+			name: "a locale listed twice is kept once",
+			targets: []tasks.Target{
+				{Locale: "ru", Language: entity.LangRU},
+				{Locale: "ru", Language: entity.LangEN},
+			},
+			want: []string{"ru"},
+		},
+		{
+			name:    "empty without targets",
+			targets: nil,
+			want:    []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			uc := newDeps(t).useCase(tt.targets)
+
+			assert.Equal(t, tt.want, uc.Locales())
+		})
+	}
+}
+
+// The list is handed out to be rendered, not to be edited underneath the use case.
+func TestUseCase_LocalesAreNotSharedWithTheCaller(t *testing.T) {
+	uc := newDeps(t).useCase(allTargets)
+
+	uc.Locales()[0] = strings.ToUpper(uc.Locales()[0])
 
 	assert.Equal(t, "ru", uc.Locales()[0])
 }

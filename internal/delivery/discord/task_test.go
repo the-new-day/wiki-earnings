@@ -22,26 +22,55 @@ func stringOption(name, value string) *discordgo.ApplicationCommandInteractionDa
 	}
 }
 
-func TestOptionalLanguage_FallsBackWhenAbsent(t *testing.T) {
-	lang, err := optionalLanguage(taskData(), "source_lang", entity.LangRU)
+func TestOptionalLanguage(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    discordgo.ApplicationCommandInteractionData
+		want    entity.Language
+		wantErr string
+	}{
+		{
+			name: "an absent option falls back",
+			data: taskData(),
+			want: entity.LangRU,
+		},
+		{
+			name: "the chosen language is read",
+			data: taskData(stringOption("source_lang", "en")),
+			want: entity.LangEN,
+		},
+		{
+			name: "an empty option falls back",
+			data: taskData(stringOption("source_lang", "")),
+			want: entity.LangRU,
+		},
+		{
+			// Discord only sends values the command was registered with, so an
+			// unrecognised one means the command definition and this have
+			// drifted apart.
+			name:    "an unknown language is refused",
+			data:    taskData(stringOption("source_lang", "de")),
+			wantErr: "unknown language",
+		},
+	}
 
-	require.NoError(t, err)
-	assert.Equal(t, entity.LangRU, lang)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := optionalLanguage(tt.data, "source_lang", entity.LangRU)
+
+			if tt.wantErr != "" {
+				assert.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
 
-func TestOptionalLanguage_ReadsTheChoice(t *testing.T) {
-	lang, err := optionalLanguage(taskData(stringOption("source_lang", "en")), "source_lang", entity.LangRU)
-
-	require.NoError(t, err)
-	assert.Equal(t, entity.LangEN, lang)
-}
-
-func TestOptionalLanguage_RejectsUnknownCode(t *testing.T) {
-	_, err := optionalLanguage(taskData(stringOption("source_lang", "de")), "source_lang", entity.LangRU)
-
-	assert.ErrorContains(t, err, "unknown language")
-}
-
+// Adding a language should reach the command without anybody remembering to
+// come back here.
 func TestLanguageChoices_CoverEveryLanguage(t *testing.T) {
 	choices := languageChoices()
 

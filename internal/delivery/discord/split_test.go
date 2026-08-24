@@ -19,64 +19,103 @@ func editsReport(rows int) string {
 	return body.String()
 }
 
-func TestSplitMessage_ShortContentStaysWhole(t *testing.T) {
-	content := editsReport(3)
+func fencedCommands(rows int) string {
+	var body strings.Builder
 
-	assert.Equal(t, []string{content}, splitMessage(content, maxMessageLength))
-}
-
-func TestSplitMessage_EveryChunkFitsTheLimit(t *testing.T) {
-	chunks := splitMessage(editsReport(200), maxMessageLength)
-
-	require.Greater(t, len(chunks), 1)
-	for _, chunk := range chunks {
-		assert.LessOrEqual(t, len(chunk), maxMessageLength)
+	body.WriteString("```\n")
+	for i := range rows {
+		fmt.Fprintf(&body, "/givecry Editor%d %d\n", i, i*100)
 	}
+	body.WriteString("```")
+
+	return body.String()
 }
 
-func TestSplitMessage_LosesNothing(t *testing.T) {
-	content := editsReport(200)
-
-	assert.Equal(t, content, strings.Join(splitMessage(content, maxMessageLength), ""))
-}
-
-func TestSplitMessage_BreaksOnLineBoundaries(t *testing.T) {
-	for _, chunk := range splitMessage(editsReport(200), maxMessageLength) {
+func breaksOnLineBoundaries(t *testing.T, chunks []string) {
+	for _, chunk := range chunks {
 		assert.True(t, strings.HasPrefix(chunk, "* ["), "chunk starts mid-row: %.40q", chunk)
 		assert.True(t, strings.HasSuffix(chunk, "💎\n"), "chunk ends mid-row: %.40q", chunk)
 	}
 }
 
-func TestSplitMessage_KeepsCodeFencesBalanced(t *testing.T) {
-	var body strings.Builder
-	body.WriteString("```\n")
-	for i := range 200 {
-		fmt.Fprintf(&body, "/givecry Editor%d %d\n", i, i*100)
-	}
-	body.WriteString("```")
-
-	chunks := splitMessage(body.String(), maxMessageLength)
-
-	require.Greater(t, len(chunks), 1)
+func keepsFencesBalanced(t *testing.T, chunks []string) {
 	for _, chunk := range chunks {
-		assert.LessOrEqual(t, len(chunk), maxMessageLength)
 		assert.Zero(t, strings.Count(chunk, "```")%2, "unbalanced fence in %.40q", chunk)
 	}
 }
 
-func TestSplitMessage_CutsOverlongLineOnRuneBoundaries(t *testing.T) {
-	content := strings.Repeat("💎", maxMessageLength)
-
-	chunks := splitMessage(content, maxMessageLength)
-
-	require.Greater(t, len(chunks), 1)
+func cutsOnRuneBoundaries(t *testing.T, chunks []string) {
 	for _, chunk := range chunks {
-		assert.LessOrEqual(t, len(chunk), maxMessageLength)
-		assert.True(t, utf8Valid(chunk), "chunk cut mid-rune")
+		assert.True(t, validUTF8(chunk), "chunk cut mid-rune")
 	}
-	assert.Equal(t, content, strings.Join(chunks, ""))
 }
 
-func utf8Valid(s string) bool {
+func TestSplitMessage(t *testing.T) {
+	tests := []struct {
+		name string
+		// content is what gets split; every chunk of it has to fit the limit.
+		content string
+		// wantSplit says whether the content is expected to need more than one
+		// message.
+		wantSplit bool
+		// wantWhole says whether the chunks put back together are the content
+		// again. A reopened code fence adds characters that were not there.
+		wantWhole bool
+		assert    func(*testing.T, []string)
+	}{
+		{
+			name:      "short content stays whole",
+			content:   editsReport(3),
+			wantSplit: false,
+			wantWhole: true,
+		},
+		{
+			name:      "a long report is cut between rows",
+			content:   editsReport(200),
+			wantSplit: true,
+			wantWhole: true,
+			assert:    breaksOnLineBoundaries,
+		},
+		{
+			name:      "a cut code block is closed and reopened",
+			content:   fencedCommands(200),
+			wantSplit: true,
+			assert:    keepsFencesBalanced,
+		},
+		{
+			name:      "a single overlong line is cut between runes",
+			content:   strings.Repeat("💎", maxMessageLength),
+			wantSplit: true,
+			wantWhole: true,
+			assert:    cutsOnRuneBoundaries,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chunks := splitMessage(tt.content, maxMessageLength)
+
+			if tt.wantSplit {
+				require.Greater(t, len(chunks), 1)
+			} else {
+				require.Len(t, chunks, 1)
+			}
+
+			for _, chunk := range chunks {
+				assert.LessOrEqual(t, len(chunk), maxMessageLength)
+			}
+
+			if tt.wantWhole {
+				assert.Equal(t, tt.content, strings.Join(chunks, ""))
+			}
+
+			if tt.assert != nil {
+				tt.assert(t, chunks)
+			}
+		})
+	}
+}
+
+func validUTF8(s string) bool {
 	return !strings.ContainsRune(s, '�') && strings.ToValidUTF8(s, "�") == s
 }

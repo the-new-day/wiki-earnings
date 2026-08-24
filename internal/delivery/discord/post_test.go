@@ -7,18 +7,43 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestPostTask_RefusesWithoutChannels(t *testing.T) {
-	bot := &Bot{}
+func TestPostTask(t *testing.T) {
+	tests := []struct {
+		name            string
+		channels        map[string]string
+		localizedTexts  map[string]string
+		wantErr         error
+		wantErrMentions []string
+	}{
+		{
+			// Nothing configured has to be an error rather than a quiet
+			// success: the command would otherwise report a task nobody
+			// received.
+			name:           "nothing configured is refused",
+			channels:       nil,
+			localizedTexts: map[string]string{"ru": "text"},
+			wantErr:        ErrNoTaskChannels,
+		},
+		{
+			name:            "a locale with no channel is reported",
+			channels:        map[string]string{"ru": "100"},
+			localizedTexts:  map[string]string{"ua": "text"},
+			wantErrMentions: []string{"ua"},
+		},
+	}
 
-	err := bot.PostTask(context.Background(), map[string]string{"ru": "text"})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bot := &Bot{taskChannels: tt.channels}
 
-	assert.ErrorIs(t, err, ErrNoTaskChannels)
-}
+			err := bot.PostTask(context.Background(), tt.localizedTexts)
 
-func TestPostTask_ReportsLocalesWithoutAChannel(t *testing.T) {
-	bot := &Bot{taskChannels: map[string]string{"ru": "100"}}
-
-	err := bot.PostTask(context.Background(), map[string]string{"ua": "text"})
-
-	assert.ErrorContains(t, err, "ua")
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
+			}
+			for _, mention := range tt.wantErrMentions {
+				assert.ErrorContains(t, err, mention)
+			}
+		})
+	}
 }

@@ -136,7 +136,36 @@ on the first `/task`.
 Requests are retried on network trouble and 5xx, but not on 4xx: a rejected token or a spent daily
 allowance will not come right in a few seconds.
 
-Swapping backends is a one-file job - the use case depends on the `Translator` interface, and
+### What the model is not allowed to touch
+
+A translation model translates everything it is shown, addresses and mentions included, and a task
+whose link has been "translated" points nowhere. So before the text is sent, every span that has to
+survive intact is replaced with a numbered placeholder — `{0}`, `{1}` — and put back afterwards:
+
+| Protected | Example |
+| --- | --- |
+| Link address in a markdown link | `[Tanks](https://wiki.pro-tanki.online/ru/Tanks)` |
+| Bare link, and one with its embed suppressed | `https://…`, `<https://…>` |
+| User, nickname, role and channel mentions | `<@1>`, `<@!1>`, `<@&1>`, `<#1>` |
+| Custom and animated emoji | `<:tank:1>`, `<a:tank:1>` |
+| Slash command mentions | `</task list:1>` |
+| Timestamps | `<t:1756080000:R>` |
+| Mass mentions | `@everyone`, `@here` |
+| Inline code and fenced code blocks | `` `text` ``, ```` ```text``` ```` |
+
+A markdown link keeps its label up for translation and protects only the address, so `[Tanks](…)`
+reads as the target language while still pointing where it was written to point.
+
+Placeholders come back changed often enough that the result is checked rather than trusted: each one
+has to appear exactly once. Spaces the model puts inside the braces are tolerated; a placeholder
+dropped, duplicated or invented is not. When the check fails, the text is translated again in the
+runs between the protected spans, one request per run — worse prose, since the model never sees the
+sentence whole, but the spans cannot be lost because they never reach the model at all. A text with
+nothing but protected spans in it is not sent anywhere.
+
+The protection is a wrapper around a translator rather than part of one, so it applies to whatever
+backend is in use. Swapping backends is a one-file job - the use case depends on the `Translator`
+interface, and
 `internal/translate` also carries a `Passthrough` that hands the text back untouched, for running
 locally without a token.
 

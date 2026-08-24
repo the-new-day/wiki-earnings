@@ -13,7 +13,7 @@ func editsReport(rows int) string {
 	var body strings.Builder
 
 	for i := range rows {
-		fmt.Fprintf(&body, "* [2026-08-20|%d] ((NA)): [Main Page](<https://wiki.pro-tanki.online/en/Main_Page>)\n  10310 💎\n", i)
+		fmt.Fprintf(&body, "* [2026-08-20|%d] ((NA)): [Main Page](https://wiki.pro-tanki.online/en/Main_Page)\n  10310 💎\n", i)
 	}
 
 	return body.String()

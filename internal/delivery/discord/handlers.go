@@ -225,7 +225,7 @@ func formatEdits(nickname string, from time.Time, payslip earnings.Payslip, show
 		}
 
 		// example:
-		// * [2026-08-20|13052] ((NA)): [Main Page](<https://wiki.pro-tanki.online/en/Main_Page>)
+		// * [2026-08-20|13052] ((NA)): [Main Page](https://wiki.pro-tanki.online/en/Main_Page)
 		//   10 310 💎 (changed)
 		costChangedText := ""
 		if rev.CostOverridden {
@@ -233,7 +233,7 @@ func formatEdits(nickname string, from time.Time, payslip earnings.Payslip, show
 		}
 
 		fmt.Fprintf(&body,
-			"* [%s|%d] %s: [%s](<%s%s/%s>)\n  %d 💎 %s\n",
+			"* [%s|%d] %s: [%s](%s%s/%s)\n  %d 💎 %s\n",
 			rev.EditedAt.Format(dayLayout), rev.RevID, revTypeToString(rev.Type),
 			rev.PageTitle, mediawiki.WikiUrl, rev.Locale, strings.ReplaceAll(rev.PageTitle, " ", "_"),
 			rev.Cost, costChangedText,

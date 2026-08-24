@@ -17,7 +17,7 @@ func (b *Bot) replyTextEphemeral(i *discordgo.InteractionCreate, content string)
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: content,
-			Flags:   discordgo.MessageFlagsEphemeral,
+			Flags:   outgoingFlags(true),
 		},
 	})
 	if err != nil {
@@ -29,9 +29,9 @@ func (b *Bot) replyTextEphemeral(i *discordgo.InteractionCreate, content string)
 // placeholder, buying up to 15 minutes to edit in the real response instead
 // of the default 3 seconds.
 func (b *Bot) deferReply(i *discordgo.InteractionCreate, ephemeral bool) (ok bool) {
-	resp := &discordgo.InteractionResponse{Type: discordgo.InteractionResponseDeferredChannelMessageWithSource}
-	if ephemeral {
-		resp.Data = &discordgo.InteractionResponseData{Flags: discordgo.MessageFlagsEphemeral}
+	resp := &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{Flags: outgoingFlags(ephemeral)},
 	}
 
 	if err := b.session.InteractionRespond(i.Interaction, resp); err != nil {
@@ -173,7 +173,7 @@ func (r *reply) fail(err error) {
 
 	_, sendErr := r.bot.session.FollowupMessageCreate(r.interaction.Interaction, true, &discordgo.WebhookParams{
 		Content: text,
-		Flags:   discordgo.MessageFlagsEphemeral,
+		Flags:   outgoingFlags(true),
 	})
 	if sendErr != nil {
 		log.Printf("discord: send error: %v", sendErr)
@@ -183,9 +183,5 @@ func (r *reply) fail(err error) {
 }
 
 func (r *reply) flags() discordgo.MessageFlags {
-	if r.ephemeral {
-		return discordgo.MessageFlagsEphemeral
-	}
-
-	return 0
+	return outgoingFlags(r.ephemeral)
 }

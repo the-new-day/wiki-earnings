@@ -7,17 +7,26 @@ of work each one was from a tag in the edit summary, prices it by the article's 
 stores the result in Postgres, and serves reports as Discord slash commands. Pay is denominated in
 crystals; every 20 000 crystals also earn the editor a day of premium.
 
-## Contents
+**Go 1.26 · discordgo · pgx · Postgres · golang-migrate · Docker Compose · mockery + testify**
 
-- [How it works](#how-it-works)
-- [Bot commands](#bot-commands)
-- [Translation](#translation)
-- [Pricing](#pricing)
-- [Getting started](#getting-started)
-- [Configuration](#configuration)
-- [Architecture](#architecture)
-- [Database schema](#database-schema)
-- [Development](#development)
+## Bot commands
+
+| Command | Who | What it does |
+| --- | --- | --- |
+| `/salary <nickname> [month]` | Wiki, Wiki Admin | One editor's total for the month |
+| `/edits <nickname> [show_minor] [month]` | Wiki, Wiki Admin | Every revision with its price and a link |
+| `/report [month]` | Wiki Admin | What every editor earned that month |
+| `/commands [month]` | Wiki Admin | Ready-to-paste `/givecry` and `/addpremium` lines |
+| `/paynick <nickname> [payments_nickname]` | Wiki Admin | Set the game account an editor is paid on |
+| `/changepay <nickname> <edit_id> <new_cost> [locale]` | Wiki Admin | Reprice one revision by hand |
+| `/task <text> [locales] [source_lang]` | Wiki Admin | Translate a task and post it to each locale's channel |
+| `/resync` | Wiki Admin | Wipe sync state and recompute from scratch |
+
+Answers longer than Discord's 2000 characters are cut on line boundaries and continued as follow-ups.
+A cached answer is shown first and replaced once the refresh lands, so nothing waits on the wiki.
+
+`/task` is translated through free [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/) (`@cf/meta/m2m100-1.2b`).
+Links, mentions, emoji and code are preserved.
 
 ## How it works
 
@@ -36,200 +45,78 @@ flowchart LR
 ```
 
 Syncing is **not a background job**: it runs before every earnings read, inside the command that
-asked for the numbers. Most of the constraints below follow from that — it has to be fast and safe
-to call concurrently.
+asked for the numbers. Most of the design follows from that.
 
-1. **Cursor.** How far each locale has been read lives in `sync_state` as `last_rev_id` plus
-   `last_edited_at`. A locale with no cursor starts `INITIAL_LOOKBACK` ago (30 days by default).
-2. **Throttling and locking.** A locale synced less than `SYNC_MIN_INTERVAL` ago is left alone.
-   Concurrent `Sync` calls collapse into one through `singleflight`, and separate processes are kept
-   apart by a Postgres advisory lock (`pg_try_advisory_lock`). Locales run in parallel; one failing
-   does not stop the others.
-3. **Fetching.** `list=recentchanges` in batches of `SYNC_BATCH_SIZE` (MediaWiki caps this at 500).
-   The `rcstart` parameter is inclusive on time, so every batch after the first opens with revisions
-   that were already handled — those are dropped by `revid`, which rises monotonically within one wiki.
-4. **Processing.** Revisions in a batch are priced in parallel (`SYNC_CONCURRENCY`). A revision with
-   no recognised tag, and one made anonymously, are skipped silently. For the rest: resolve the
-   editor (registering the wiki account on first sight, picking up renames), fetch the article as it
-   was before and after, price the difference, upsert the row.
-5. **Budget.** A run is capped at `SYNC_MAX_DURATION`. Hitting the cap is not a failure: the cursor
-   is saved after every batch, and the next run carries on from there.
-6. **Failures.** A revision that cannot be priced goes to the dead letter (`failed_revisions`) while
-   the cursor moves past it regardless — that table becomes the only record it ever existed.
-   A separate ticker (`REPLAY_INTERVAL`) tries them again; after `DEAD_LETTER_MAX_ATTEMPTS` failures
-   an entry is retired as `permanent` and left alone.
-
-A failed sync is not fatal to a read. The command shows whatever is already stored, marked with
-`⚠️ Results may be out of date.`
-
-## Bot commands
-
-Every command acknowledges immediately with a placeholder and edits the real answer in afterwards —
-a round trip to the wiki does not fit in Discord's three-second window. Where a cached answer exists
-it is shown first, tagged "Refreshing with latest edits…", and replaced once the refresh lands.
-
-| Command | Who | Visibility | What it does |
-| --- | --- | --- | --- |
-| `/salary <nickname> [month]` | Wiki, Wiki Admin | ephemeral | One editor's total for the month |
-| `/edits <nickname> [show_minor] [month]` | Wiki, Wiki Admin | public | Every revision with its price and a link |
-| `/report [month]` | Wiki Admin | public | What every editor earned that month |
-| `/commands [month]` | Wiki Admin | public | Ready-to-paste `/givecry` and `/addpremium` lines |
-| `/paynick <nickname> [payments_nickname]` | Wiki Admin | ephemeral | Set the game account an editor is paid on |
-| `/changepay <nickname> <edit_id> <new_cost> [locale]` | Wiki Admin | ephemeral | Reprice one revision by hand |
-| `/task <text> [locales] [source_lang]` | Wiki Admin | ephemeral | Translate a task and post it to a locale's channel |
-| `/resync` | Wiki Admin | ephemeral | Wipe sync state and recompute from scratch |
-
-Details:
-
-- **`month`** takes `YYYY-MM` and defaults to the current month. Periods are half-open: `[from, to)`.
-- **`show_minor`** on `/edits` controls whether `(ME)` and `(IA)` revisions are listed. By default
-  they collapse into a count, but a revision with a hand-set price is always shown.
-- **`locale`** on `/changepay` is only needed when the editor has accounts on several wikis: an
-  `edit_id` is unique within one wiki, not across them. Left out and ambiguous, the bot asks for it.
-  A manual price overrides anything computed, flat rates included, and is journalled in
-  `revision_price_overrides` along with who set it.
-- **`/task`** posts the text to one channel per locale, translated into the language that locale
-  reads. Locales sharing a language share one translation and get their own message; the language
-  the text was written in is posted as it stands, untouched. A translation that fails stops the
-  whole post: quietly sending the original to a channel that expects another language is worse than
-  not sending.
-- **`locales`** picks who gets the task. Left out, everything in `TASK_TARGETS` does. The field
-  suggests as you type, one locale at a time: with nothing typed it offers **All locales** first,
-  then each locale on its own; type a comma after what you have picked and it offers the rest, so a
-  selection is built up by picking rather than by remembering codes. Typing them by hand works too -
-  commas and spaces both separate, and case does not matter. A locale that is not in `TASK_TARGETS`
-  stops the post and the bot answers with the ones that are, rather than posting to the rest.
-- **`source_lang`** says which language the task is written in. It defaults to Russian and offers
-  every language the service knows, so an English-speaking admin can write in English and have the
-  Russian channels translated instead.
-- **`/commands`** pays the editor's **payments nickname** where one is set, and their wiki nickname
-  where none is. A wiki nickname is not always the account the crystals should land on: it may spell
-  the in-game one differently, or the editor may have asked to be paid somewhere else entirely.
-- **`/paynick`** sets that nickname, one per editor. Left without `payments_nickname` it clears it
-  and the editor is paid on their wiki nickname again. It changes `/commands` and nothing else -
-  `/salary`, `/edits` and `/report` show the wiki nickname, and every lookup, this command's own
-  `nickname` included, is by wiki nickname.
-- **`/resync`** clears the cursors and the dead letter for every locale and syncs again from scratch.
-  Manual prices survive it. It is slow and hits the wiki hard — for emergencies only.
-- **Long answers.** Discord rejects a message over 2000 characters, so answers are cut on line
-  boundaries and continued as follow-up messages. A code fence left open by a cut is closed and
-  reopened in the next message.
-- **Lifetime.** With `MESSAGE_LIFETIME` set, the `/edits` answer is deleted after that long, follow-up
-  messages included.
-- **Errors** arrive as a separate ephemeral message, and the "thinking…" placeholder is taken down.
-
-## Translation
-
-`/task` is translated once per language among the locales it was sent to, out of whatever language
-it was written in - Russian unless `source_lang` says otherwise. The
-translation runs through [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/),
-model `@cf/meta/m2m100-1.2b`, over plain HTTP - no SDK, no infrastructure.
-
-It is on Workers AI because a free Cloudflare account is enough to use it: no payment method, and
-the free daily allowance is worth several hundred task translations, against the handful a day this
-actually posts. To set it up, create a Cloudflare account, take the account ID from the Workers AI
-page of the dashboard, create a token with "Create a Workers AI API Token" (permissions: Workers AI
-Read and Edit), and put both in `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`. Load refuses to
-start if `TASK_TARGETS` is set without them, so a half-configured bot says so at startup rather than
-on the first `/task`.
-
-Requests are retried on network trouble and 5xx, but not on 4xx: a rejected token or a spent daily
-allowance will not come right in a few seconds.
-
-### What the model is not allowed to touch
-
-A translation model translates everything it is shown, addresses and mentions included, and a task
-whose link has been "translated" points nowhere. So before the text is sent, every span that has to
-survive intact is replaced with a numbered placeholder — `{0}`, `{1}` — and put back afterwards:
-
-| Protected | Example |
-| --- | --- |
-| Link address in a markdown link | `[Tanks](https://wiki.pro-tanki.online/ru/Tanks)` |
-| Bare link, and one with its embed suppressed | `https://…`, `<https://…>` |
-| User, nickname, role and channel mentions | `<@1>`, `<@!1>`, `<@&1>`, `<#1>` |
-| Custom and animated emoji | `<:tank:1>`, `<a:tank:1>` |
-| Slash command mentions | `</task list:1>` |
-| Timestamps | `<t:1756080000:R>` |
-| Mass mentions | `@everyone`, `@here` |
-| Inline code and fenced code blocks | `` `text` ``, ```` ```text``` ```` |
-
-A markdown link keeps its label up for translation and protects only the address, so `[Tanks](…)`
-reads as the target language while still pointing where it was written to point.
-
-Placeholders come back changed often enough that the result is checked rather than trusted: each one
-has to appear exactly once. Spaces the model puts inside the braces are tolerated; a placeholder
-dropped, duplicated or invented is not. When the check fails, the text is translated again in the
-runs between the protected spans, one request per run — worse prose, since the model never sees the
-sentence whole, but the spans cannot be lost because they never reach the model at all. A text with
-nothing but protected spans in it is not sent anywhere.
-
-The protection is a wrapper around a translator rather than part of one, so it applies to whatever
-backend is in use. Swapping backends is a one-file job - the use case depends on the `Translator`
-interface, and
-`internal/translate` also carries a `Passthrough` that hands the text back untouched, for running
-locally without a token.
+- **It has to be safe to call concurrently.** Calls within a process collapse through `singleflight`;
+  separate processes are kept apart by a Postgres advisory lock. Locales run in parallel, and one
+  failing does not stop the others.
+- **It has to be fast.** A locale synced in the last minute is skipped, and a run is capped at
+  `SYNC_MAX_DURATION`. Hitting the cap is not a failure: the cursor is saved per batch, so the next
+  run carries on from there.
+- **It has to survive bad data.** A revision that cannot be priced goes to a dead letter and the
+  cursor moves past it. A separate ticker retries those, retiring an entry after five attempts.
+- **A failed sync is not fatal to a read.** The command shows what is already stored, marked
+  `⚠️ Results may be out of date.`
 
 ## Pricing
 
-### Kind of work
-
-Editors declare what they did by tagging the edit summary on the wiki. An untagged revision is
-neither paid nor stored.
+Editors declare what they did by tagging the edit summary. An untagged revision is neither paid nor
+stored.
 
 | Tag | Kind | Priced as |
 | --- | --- | --- |
 | `(ME)` | Minor edit | Flat 1 500 |
 | `(IA)` | Item addition | Flat 3 500 |
-| `(AE)` | Article edit | By how much the article gained |
-| `(RA)` | Refactored article | By how much the article gained |
+| `(AE)` / `(RA)` | Article edit, refactor | By how much the article gained |
 | `(NA)` | New article | The whole article |
 | `(TA)` | Translated article | 30 % of the whole article |
 
-When a summary carries several tags the first of `(NA)`, `(TA)`, `(RA)`, `(AE)`, `(IA)`, `(ME)` wins.
-
-### Formulas
-
-Everything that is not a minor edit pays at least `MinPayment` = 3 500. The base unit
-`BaseUnitCost` = 100 000 is what a perfect article — every metric maxed out — would be worth.
-
 ```
 Volume  = min(1, (words + √(table cells) × 16.70) / 2039)
-Quality = weighted mean of the quality metrics                    // 0..1
+Quality = weighted mean of six metrics: tables, links, sections, images, categories, templates
 
 ArticleCost = Volume × (0.191 + 0.809 × Quality) × 100000
 EditCost    = (max(0, ΔVolume) × 0.7 + max(0, ΔQuality) × 0.3) × 100000
 ```
 
 Size sets the scale and quality moves the price within it, so a large but plainly written article
-still earns a good part of its worth — that is what the `QualityFloor` = 0.191 term is for. Edits are
-paid for gains only: making a metric worse never pushes a price below zero, and never earns anything.
+still earns a good part of its worth. Edits are paid for gains only: making an article worse never
+earns anything and never pushes a price below zero. Every metric saturates at a cap, so piling on
+more past that point is not worth anything either.
 
-On top of that, adding the `DidYouKnow` template to an article pays a one-off bonus of 1 000.
+## Architecture
 
-### Quality metrics
-
-| Metric | Weight | Saturates at | Notes |
-| --- | --- | --- | --- |
-| Table usage | 3 | 8 cells | Counted from the wikitext |
-| Link density | 2 | 8 % of words | Scores 0 below 150 words |
-| Section structure | 2 | 10 sections | Scores 0 if the heading hierarchy is broken |
-| Image density | 1 | 5 % of words | Scores 0 below 100 words |
-| Categories | 1 | 1 category | |
-| Template usage | 1 | 10 templates | |
-
-Weights total 10. Every metric returns 0..1 and saturates at its cap — piling on more past that
-point earns nothing.
-
-Size (`Volume`) is deliberately not one of these: it scales the price rather than adjusting it.
-
-### Premium
+Dependencies point inward: delivery knows about use cases, use cases know about the domain, and the
+domain knows about nobody. Every outside dependency is an interface declared on the consumer's side,
+so storage, the wiki client and the translator are all swappable — and all mocked in tests.
 
 ```
-days of premium = crystals / 20000   (integer division)
+cmd/bot, cmd/console    Entry points
+internal/
+  app/                  The dependency graph both entry points are built on
+  config/               Environment loading and validation
+  delivery/discord/     Slash commands, role gating, formatting, message splitting
+  delivery/console/     REPL over the same use cases, for looking at the pipeline
+  usecase/              earnings · editors · revisions · resync · tasks
+  domain/               Entities and the price formulas, no I/O
+  sync/                 The pipeline: cursors, batches, dead letter, replay
+  mediawiki/            Wiki HTTP client and response parsing
+  translate/            Translation backends and placeholder protection
+  storage/postgres/     Repositories and the advisory locker
+migrations/             SQL migrations (golang-migrate)
 ```
 
-Computed from the monthly total, not per revision. `/commands` emits `/addpremium` lines only for
-editors who earned at least one full day.
+Decisions worth knowing:
+
+- **A price is computed once, at sync time.** Reading earnings is a `SUM` over rows that were already
+  priced; nothing is recomputed to render a report.
+- **Writes on the sync path are idempotent**, so a crash halfway through a batch costs nothing.
+- **Editors and wiki accounts are separate.** One person has a distinct `userid` on every language
+  wiki; all of them fold into one editor, which is what gets paid. A nickname is only a label, so
+  renaming on the wiki breaks nothing. Revision ids are unique only within one wiki, so keys are
+  composite throughout: `(locale, revision_id)`.
+- **Replay is not part of Sync.** Sync runs on a user request's budget, and working through a backlog
+  is not what that budget is for.
 
 ## Getting started
 
@@ -237,26 +124,10 @@ Docker and Docker Compose are all you need.
 
 ```bash
 cp .env.example .env
-# fill in DISCORD_BOT_TOKEN, WIKI_ROLE_ID, WIKI_ADMIN_ROLE_ID
 
-make up-with-migrations
+make up-with-migrations   # first run
+make up                   # after that
 ```
-
-After that `make up` is enough. Migrations run under their own compose profile and stay out of a
-normal start.
-
-| Target | What it does |
-| --- | --- |
-| `make up` | Build and start the bot with Postgres |
-| `make down` | Stop everything |
-| `make up-with-migrations` | Apply migrations, then start |
-| `make migrate-up` | Apply migrations |
-| `make migrate-down` | Roll back one migration |
-| `make migrate-down-all` | Roll back everything |
-| `make migrate-create name=foo` | Scaffold a migration pair |
-| `make migrate-version` | Current schema version |
-| `make test` | Tests with the race detector |
-| `make mocks` | Regenerate mocks |
 
 The bot needs the `applications.commands` scope and the Message Content intent. Slash commands are
 registered globally at startup and removed on a clean shutdown.
@@ -264,142 +135,16 @@ registered globally at startup and removed on a clean shutdown.
 ## Configuration
 
 Everything is read from the environment. An unset variable keeps its default; a set but unparsable
-one fails the start. Durations use Go syntax: `90s`, `5m`, `720h`.
-
-Under compose all of this comes from `.env`, which is optional — a run with none of it set still
-works as long as the three required variables are in the environment. `.env.example` lists the lot.
-
-**Required:**
-
-| Variable | Meaning |
-| --- | --- |
-| `DISCORD_BOT_TOKEN` | Bot token |
-| `WIKI_ROLE_ID` | Role id for wiki editors |
-| `WIKI_ADMIN_ROLE_ID` | Role id for wiki admins |
-
-**Postgres:**
-
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `POSTGRES_USER` | `postgres` | |
-| `POSTGRES_PASSWORD` | `postgres` | |
-| `POSTGRES_DB` | `wiki` | |
-| `POSTGRES_HOST` | `localhost` | Pinned to the compose network under compose |
-| `POSTGRES_PORT` | `5432` | Pinned to the compose network under compose |
-| `POSTGRES_SSLMODE` | `disable` | Pinned to the compose network under compose |
-| `POSTGRES_MAX_CONNS` | `10` | |
-| `POSTGRES_MAX_CONN_LIFETIME` | `1h` | |
-| `POSTGRES_CONNECT_TIMEOUT` | `5s` | |
-
-**Sync:**
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `LOCALES` | `ru,ua,en,br` | Language wikis to read, comma separated |
-| `TASK_TARGETS` | none | Where `/task` can post: `<locale>:<language>:<channel id>` per locale, comma separated. A locale left out is not offered and receives no tasks |
-| `CLOUDFLARE_ACCOUNT_ID` | none | Workers AI account `/task` translates through. Required once `TASK_TARGETS` is set |
-| `CLOUDFLARE_API_TOKEN` | none | Workers AI token, with the Workers AI Read and Edit permissions |
-| `SYNC_BATCH_SIZE` | `500` | Revisions per request to the wiki (MediaWiki's ceiling) |
-| `INITIAL_LOOKBACK` | `720h` | How far back a locale starts with no cursor |
-| `SYNC_MIN_INTERVAL` | `1m` | How long a locale is left alone after a sync |
-| `SYNC_MAX_DURATION` | `20s` | Budget for one run |
-| `SYNC_CONCURRENCY` | `8` | Revisions priced in parallel |
-| `DEAD_LETTER_MAX_ATTEMPTS` | `5` | Retries before an entry is retired |
-| `DEAD_LETTER_BATCH_SIZE` | `100` | Entries per `Replay` |
-| `REPLAY_INTERVAL` | `5m` | How often failed revisions are retried |
-
-**Discord:**
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `MESSAGE_LIFETIME` | `2m` | How long the `/edits` answer stays up. `0` keeps it forever |
-
-## Architecture
-
-Dependencies point inward: delivery knows about use cases, use cases know about the domain, and the
-domain knows about nobody. Every outside dependency is declared as an interface on the consumer's
-side, so storage, the wiki client and the pricer are all swappable in tests.
-
-Both entry points need the same graph, so building it lives in `internal/app`. An entry point reads
-the configuration, asks `app.New` for the wiring, and hands the parts to whichever delivery it runs.
-
-```
-cmd/
-  bot/                 Bot entry point: the Discord delivery and the Replay ticker
-  console/             Console entry point
-internal/
-  app/                 The dependency graph both entry points are built on
-  config/              Environment loading and validation
-  delivery/
-    discord/           Slash commands, role gating, formatting, message splitting
-    console/           REPL over the same use cases, JSON output
-  usecase/
-    earnings/          Earnings and reports; syncs before reading
-    revisions/         Manual repricing
-    resync/            Wipe state and recompute from scratch
-  domain/
-    entity/            Models, no behaviour
-    pricing/           The price formulas
-    pricing/metric/    Quality metrics
-  sync/                The pipeline: cursors, batches, dead letter, replay
-  mediawiki/           Wiki HTTP client with retries, and response parsing
-  translate/           Translation backends behind one interface
-  storage/postgres/    Repositories and the advisory locker
-migrations/            SQL migrations (golang-migrate)
-```
-
-Decisions worth knowing:
-
-- **A price is computed once, at sync time.** Reading earnings is a `SUM` over rows that were already
-  priced; nothing is recomputed to render a report.
-- **Writes on the sync path are idempotent.** The cursor is saved per batch, so a crash halfway
-  through replays revisions that are already stored.
-- **Editors and wiki accounts are separate.** One person has a distinct `userid` on every language
-  wiki; all of them fold into one `editor_id`, which is what gets paid. A nickname is only a label,
-  so renaming on the wiki breaks nothing.
-- **Replay is not part of Sync.** Sync runs on a user request's budget, and working through a backlog
-  is not what that budget is for, so a separate ticker drives it.
-
-## Database schema
-
-| Table | Holds |
-| --- | --- |
-| `editors` | The editor — whoever gets paid, and the game account to pay them on |
-| `editor_accounts` | Wiki accounts: `(locale, wiki_id)` → `editor_id` |
-| `revisions` | Priced revisions: `(locale, revision_id)`, kind, price, manual-price flag |
-| `revision_price_overrides` | Journal of manual repricing: old and new price, who and when |
-| `failed_revisions` | Dead letter: unpriced revisions, attempt count, last error |
-| `sync_state` | Per-locale cursor |
-
-Revision ids are unique only within one wiki, which is why keys are composite throughout —
-`(locale, revision_id)`. In the dead letter the author is kept as a raw wiki_id-and-nickname pair
-with no foreign key: "the editor is not known yet" is one of the ordinary reasons to end up there.
+one fails the start. Only three are required — `DISCORD_BOT_TOKEN`, `WIKI_ROLE_ID` and
+`WIKI_ADMIN_ROLE_ID`. `.env.example` lists the rest with its defaults: the Postgres connection, the
+sync budgets, and `TASK_TARGETS` with the Cloudflare credentials `/task` needs.
 
 ## Development
 
 ```bash
-go test ./...            # tests
-make test                # the same, with -race
-make mocks               # regenerate mocks (mockery)
-go run ./cmd/console     # REPL against a real database
-```
+make test     # tests with the race detector
+make mocks    # regenerate mocks (mockery)
+make migrate-create name=foo
 
-Mocks are declared in `.mockery.yml` and live next to their interfaces in `mocks` subpackages.
-Regenerate them after changing an interface.
-
-Both entry points read plain environment variables, so a local run needs them exported — or a
-`docker compose run` that brings its own.
-
-The console is the way to look at the pipeline without Discord in the way. It drives the same use
-cases and prints raw JSON.
-
-```
-> sync                                  run a sync
-> replay                                retry dead-lettered revisions
-> resync                                wipe everything and recompute
-> salary <nickname> [YYYY-MM]
-> edits <nickname> [YYYY-MM]
-> report [YYYY-MM]
-> changepay <nickname> <edit_id> <new_cost> [locale]
-> quit
+go run ./cmd/console   # REPL against a real database, JSON output
 ```

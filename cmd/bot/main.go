@@ -48,7 +48,7 @@ func run() error {
 		cfg.Discord.WikiAdminRoleID,
 		cfg.MessageLifetime,
 		discord.TaskConfig{
-			Translator: translate.NewCloudflare(cfg.Cloudflare.AccountID, cfg.Cloudflare.APIToken),
+			Translator: translate.Protect(translate.NewCloudflare(cfg.Cloudflare.AccountID, cfg.Cloudflare.APIToken)),
 			Targets:    taskTargets(cfg),
 		},
 	)

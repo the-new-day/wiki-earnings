@@ -18,6 +18,9 @@ packages:
     interfaces:
       EditorReader: {}
       RevisionStore: {}
+  github.com/the-new-day/wiki-earnings/internal/translate:
+    interfaces:
+      Translator: {}
   github.com/the-new-day/wiki-earnings/internal/usecase/tasks:
     interfaces:
       Translator: {}

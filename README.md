@@ -74,6 +74,7 @@ it is shown first, tagged "Refreshing with latest edits…", and replaced once t
 | `/edits <nickname> [show_minor] [month]` | Wiki, Wiki Admin | public | Every revision with its price and a link |
 | `/report [month]` | Wiki Admin | public | What every editor earned that month |
 | `/commands [month]` | Wiki Admin | public | Ready-to-paste `/givecry` and `/addpremium` lines |
+| `/paynick <nickname> [payments_nickname]` | Wiki Admin | ephemeral | Set the game account an editor is paid on |
 | `/changepay <nickname> <edit_id> <new_cost> [locale]` | Wiki Admin | ephemeral | Reprice one revision by hand |
 | `/task <text> [locales] [source_lang]` | Wiki Admin | ephemeral | Translate a task and post it to a locale's channel |
 | `/resync` | Wiki Admin | ephemeral | Wipe sync state and recompute from scratch |
@@ -101,6 +102,13 @@ Details:
 - **`source_lang`** says which language the task is written in. It defaults to Russian and offers
   every language the service knows, so an English-speaking admin can write in English and have the
   Russian channels translated instead.
+- **`/commands`** pays the editor's **payments nickname** where one is set, and their wiki nickname
+  where none is. A wiki nickname is not always the account the crystals should land on: it may spell
+  the in-game one differently, or the editor may have asked to be paid somewhere else entirely.
+- **`/paynick`** sets that nickname, one per editor. Left without `payments_nickname` it clears it
+  and the editor is paid on their wiki nickname again. It changes `/commands` and nothing else -
+  `/salary`, `/edits` and `/report` show the wiki nickname, and every lookup, this command's own
+  `nickname` included, is by wiki nickname.
 - **`/resync`** clears the cursors and the dead letter for every locale and syncs again from scratch.
   Manual prices survive it. It is slow and hits the wiki hard — for emergencies only.
 - **Long answers.** Discord rejects a message over 2000 characters, so answers are cut on line
@@ -327,7 +335,7 @@ Decisions worth knowing:
 
 | Table | Holds |
 | --- | --- |
-| `editors` | The editor — whoever gets paid |
+| `editors` | The editor — whoever gets paid, and the game account to pay them on |
 | `editor_accounts` | Wiki accounts: `(locale, wiki_id)` → `editor_id` |
 | `revisions` | Priced revisions: `(locale, revision_id)`, kind, price, manual-price flag |
 | `revision_price_overrides` | Journal of manual repricing: old and new price, who and when |

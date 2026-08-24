@@ -61,6 +61,8 @@ func (b *Bot) handleCommand(
 		b.runGated(i, data, []string{b.wikiAdminRoleID}, false, b.handleReport, 0)
 	case "changepay":
 		b.runGated(i, data, []string{b.wikiAdminRoleID}, true, b.handleChangePay, 0)
+	case "paynick":
+		b.runGated(i, data, []string{b.wikiAdminRoleID}, true, b.handlePayNick, 0)
 	case "commands":
 		b.runGated(i, data, []string{b.wikiAdminRoleID}, false, b.handleCommands, 0)
 	case "resync":
@@ -351,6 +353,26 @@ func (b *Bot) handleChangePay(
 	return fmt.Sprintf("Cost changed to %d.", newCost), nil
 }
 
+func (b *Bot) handlePayNick(
+	ctx context.Context,
+	i *discordgo.InteractionCreate,
+	data discordgo.ApplicationCommandInteractionData,
+	_ func(string),
+) (string, error) {
+	nickname := data.GetOption("nickname").StringValue()
+
+	editor, err := b.editors.SetPaymentsNickname(ctx, nickname, optionalString(data, "payments_nickname"))
+	if err != nil {
+		return "", err
+	}
+
+	if editor.PaymentsNickname == "" {
+		return fmt.Sprintf("%s is paid on their Wiki nickname again.", editor.Nickname), nil
+	}
+
+	return fmt.Sprintf("%s is paid on %s.", editor.Nickname, editor.PaymentsNickname), nil
+}
+
 func (b *Bot) handleResync(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
@@ -398,7 +420,7 @@ func formatCommands(report earnings.Report) string {
 
 		fmt.Fprintf(&result,
 			"/givecry %s %d\n",
-			editorEarnings.Nickname,
+			editorEarnings.PayTo(),
 			editorEarnings.Total,
 		)
 	}
@@ -412,7 +434,7 @@ func formatCommands(report earnings.Report) string {
 
 		fmt.Fprintf(&result,
 			"/addpremium %s %d\n",
-			editorEarnings.Nickname,
+			editorEarnings.PayTo(),
 			pricing.DaysPremium(int(editorEarnings.Total)),
 		)
 	}

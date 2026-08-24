@@ -11,6 +11,7 @@ import (
 	"github.com/the-new-day/wiki-earnings/internal/storage/postgres"
 	"github.com/the-new-day/wiki-earnings/internal/sync"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/earnings"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/editors"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/resync"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/revisions"
 )
@@ -18,6 +19,7 @@ import (
 type App struct {
 	Sync      *sync.Service
 	Earnings  *earnings.UseCase
+	Editors   *editors.UseCase
 	Revisions *revisions.UseCase
 	Resync    *resync.UseCase
 
@@ -32,14 +34,14 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		return nil, err
 	}
 
-	editors := postgres.NewEditorRepository(pool)
+	editorRepo := postgres.NewEditorRepository(pool)
 	revisionRepo := postgres.NewRevisionRepository(pool)
 	syncState := postgres.NewSyncStateRepository(pool)
 	deadLetter := postgres.NewDeadLetterRepository(pool)
 
 	syncSvc := sync.New(
 		mediawiki.NewClient(),
-		editors,
+		editorRepo,
 		revisionRepo,
 		syncState,
 		deadLetter,
@@ -59,8 +61,9 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 
 	return &App{
 		Sync:      syncSvc,
-		Earnings:  earnings.New(editors, revisionRepo, syncSvc),
-		Revisions: revisions.New(editors, revisionRepo),
+		Earnings:  earnings.New(editorRepo, revisionRepo, syncSvc),
+		Editors:   editors.New(editorRepo),
+		Revisions: revisions.New(editorRepo, revisionRepo),
 		Resync:    resync.New(syncState, deadLetter, syncSvc, cfg.Locales),
 		pool:      pool,
 	}, nil

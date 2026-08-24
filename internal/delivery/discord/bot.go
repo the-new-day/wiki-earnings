@@ -10,6 +10,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/earnings"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/editors"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/resync"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/revisions"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/tasks"
@@ -41,6 +42,7 @@ type Bot struct {
 	session *discordgo.Session
 
 	earnings  *earnings.UseCase
+	editors   *editors.UseCase
 	revisions *revisions.UseCase
 	resync    *resync.UseCase
 	tasks     *tasks.UseCase
@@ -57,6 +59,7 @@ type Bot struct {
 func New(
 	token string,
 	earningsUC *earnings.UseCase,
+	editorsUC *editors.UseCase,
 	revisionsUC *revisions.UseCase,
 	resyncUC *resync.UseCase,
 	wikiRoleID, wikiAdminRoleID string,
@@ -73,6 +76,7 @@ func New(
 	bot := &Bot{
 		session:         session,
 		earnings:        earningsUC,
+		editors:         editorsUC,
 		revisions:       revisionsUC,
 		resync:          resyncUC,
 		wikiRoleID:      wikiRoleID,
@@ -273,6 +277,23 @@ func registerCommands() {
 					Type:        discordgo.ApplicationCommandOptionString,
 					Name:        "locale",
 					Description: "Wiki locale (needed if the editor has multiple accounts)",
+				},
+			},
+		},
+		{
+			Name:        "paynick",
+			Description: "Set the account an editor is paid on",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "nickname",
+					Description: "Editor's nickname on the Wiki",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "payments_nickname",
+					Description: "In-game nickname to pay. Leave out to pay the Wiki nickname again",
 				},
 			},
 		},

@@ -60,11 +60,11 @@ func (repo *RevisionRepository) Upsert(ctx context.Context, r entity.Revision) e
 // SumCostByEditor totals cost per editor over a half-open period [from, to).
 func (repo *RevisionRepository) SumCostByEditor(ctx context.Context, from, to time.Time) ([]entity.EditorEarnings, error) {
 	rows, err := repo.pool.Query(ctx, `
-		SELECT e.editor_id, e.nickname, COALESCE(SUM(r.cost), 0)
+		SELECT e.editor_id, e.nickname, COALESCE(e.payments_nickname, ''), COALESCE(SUM(r.cost), 0)
 		FROM revisions r
 		JOIN editors e ON e.editor_id = r.editor_id
 		WHERE r.edited_at >= $1 AND r.edited_at < $2
-		GROUP BY e.editor_id, e.nickname
+		GROUP BY e.editor_id, e.nickname, e.payments_nickname
 		ORDER BY e.editor_id`, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: sum cost by editor: %w", err)
@@ -74,7 +74,7 @@ func (repo *RevisionRepository) SumCostByEditor(ctx context.Context, from, to ti
 	var out []entity.EditorEarnings
 	for rows.Next() {
 		var e entity.EditorEarnings
-		if err := rows.Scan(&e.EditorID, &e.Nickname, &e.Total); err != nil {
+		if err := rows.Scan(&e.EditorID, &e.Nickname, &e.PaymentsNickname, &e.Total); err != nil {
 			return nil, fmt.Errorf("postgres: sum cost by editor: scan: %w", err)
 		}
 		out = append(out, e)

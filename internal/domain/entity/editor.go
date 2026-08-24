@@ -1,12 +1,16 @@
 package entity
 
 type Editor struct {
-	EditorID int64  `db:"editor_id"`
-	Nickname string `db:"nickname"` // Nickname on the wiki site
+	EditorID int64
+	Nickname string // Nickname on the wiki site
+
+	// PaymentsNickname is the in-game account payments are made to.
+	// Empty means payments go to Nickname.
+	PaymentsNickname string
 }
 
 type EditorAccount struct {
-	WikiID   int64  `db:"wiki_id"` // userid on the wiki site
-	Locale   string `db:"locale"`
-	EditorID int64  `db:"editor_id"`
+	WikiID   int64 // userid on the wiki site
+	Locale   string
+	EditorID int64
 }

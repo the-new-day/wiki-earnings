@@ -7,6 +7,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/the-new-day/wiki-earnings/internal/storage"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/editors"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/revisions"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/tasks"
 )
@@ -52,6 +53,8 @@ func errorText(err error) (text string, hasExplanation bool) {
 		return fmt.Sprintf("Nothing was posted: %v.", err), true
 	case errors.Is(err, tasks.ErrNoTargets), errors.Is(err, ErrNoTaskChannels):
 		return "No task channels are configured. Configure and restart the bot.", true
+	case errors.Is(err, editors.ErrNicknameTooLong):
+		return "That nickname is too long.", true
 	case errors.Is(err, ErrWrongMonthLayout):
 		return "Wrong month layout. Use YYYY-MM, for example 2026-08.", true
 	default:

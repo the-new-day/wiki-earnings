@@ -41,6 +41,7 @@ func run() error {
 	bot, err := discord.New(
 		cfg.Discord.BotToken,
 		a.Earnings,
+		a.Editors,
 		a.Revisions,
 		a.Resync,
 		cfg.Discord.WikiRoleID,

@@ -11,6 +11,7 @@ import (
 	"github.com/the-new-day/wiki-earnings/internal/storage"
 	"github.com/the-new-day/wiki-earnings/internal/sync"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/earnings"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/editors"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/revisions"
 )
 
@@ -18,6 +19,7 @@ var (
 	_ sync.EditorRegistry    = (*EditorRepository)(nil)
 	_ earnings.EditorReader  = (*EditorRepository)(nil)
 	_ revisions.EditorReader = (*EditorRepository)(nil)
+	_ editors.Repository     = (*EditorRepository)(nil)
 )
 
 type EditorRepository struct {
@@ -33,8 +35,9 @@ func NewEditorRepository(pool *pgxpool.Pool) *EditorRepository {
 func (repo *EditorRepository) GetByID(ctx context.Context, id int64) (entity.Editor, error) {
 	var e entity.Editor
 	err := repo.pool.QueryRow(ctx, `
-		SELECT editor_id, nickname FROM editors WHERE editor_id = $1`, id).
-		Scan(&e.EditorID, &e.Nickname)
+		SELECT editor_id, nickname, COALESCE(payments_nickname, '')
+		FROM editors WHERE editor_id = $1`, id).
+		Scan(&e.EditorID, &e.Nickname, &e.PaymentsNickname)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return entity.Editor{}, fmt.Errorf("postgres: get editor %d: %w", id, storage.ErrNotFound)
 	}
@@ -48,8 +51,9 @@ func (repo *EditorRepository) GetByID(ctx context.Context, id int64) (entity.Edi
 func (repo *EditorRepository) FindByNickname(ctx context.Context, nickname string) (entity.Editor, error) {
 	var e entity.Editor
 	err := repo.pool.QueryRow(ctx, `
-		SELECT editor_id, nickname FROM editors WHERE nickname ILIKE $1`, nickname).
-		Scan(&e.EditorID, &e.Nickname)
+		SELECT editor_id, nickname, COALESCE(payments_nickname, '')
+		FROM editors WHERE nickname ILIKE $1`, nickname).
+		Scan(&e.EditorID, &e.Nickname, &e.PaymentsNickname)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return entity.Editor{}, fmt.Errorf("postgres: find editor %q: %w", nickname, storage.ErrNotFound)
 	}
@@ -65,11 +69,11 @@ func (repo *EditorRepository) FindByNickname(ctx context.Context, nickname strin
 func (repo *EditorRepository) FindByLocaleUser(ctx context.Context, locale string, wikiUserID int64) (entity.Editor, bool, error) {
 	var e entity.Editor
 	err := repo.pool.QueryRow(ctx, `
-		SELECT e.editor_id, e.nickname
+		SELECT e.editor_id, e.nickname, COALESCE(e.payments_nickname, '')
 		FROM editor_accounts ea
 		JOIN editors e ON e.editor_id = ea.editor_id
 		WHERE ea.locale = $1 AND ea.wiki_id = $2`, locale, wikiUserID).
-		Scan(&e.EditorID, &e.Nickname)
+		Scan(&e.EditorID, &e.Nickname, &e.PaymentsNickname)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return entity.Editor{}, false, nil
 	}
@@ -106,6 +110,27 @@ func (repo *EditorRepository) Register(ctx context.Context, locale string, wikiU
 	}
 
 	return entity.Editor{EditorID: editorID, Nickname: nickname}, nil
+}
+
+// SetPaymentsNickname sets the account an editor is paid on.
+// An empty nickname clears it.
+func (repo *EditorRepository) SetPaymentsNickname(ctx context.Context, editorID int64, nickname string) error {
+	var stored *string
+	if nickname != "" {
+		stored = &nickname
+	}
+
+	tag, err := repo.pool.Exec(ctx, `
+		UPDATE editors SET payments_nickname = $1 WHERE editor_id = $2`, stored, editorID)
+	if err != nil {
+		return fmt.Errorf("postgres: set payments nickname of editor %d to %q: %w", editorID, nickname, err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("postgres: set payments nickname of editor %d: %w", editorID, storage.ErrNotFound)
+	}
+
+	return nil
 }
 
 func (repo *EditorRepository) Rename(ctx context.Context, editorID int64, nickname string) error {

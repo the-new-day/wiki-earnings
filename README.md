@@ -26,7 +26,8 @@ Answers longer than Discord's 2000 characters are cut on line boundaries and con
 A cached answer is shown first and replaced once the refresh lands, so nothing waits on the wiki.
 
 `/task` is translated through free [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/) (`@cf/meta/m2m100-1.2b`).
-Links, mentions, emoji and code are preserved.
+Links, mentions, emoji and code are swapped for placeholders before the text is sent and put back
+after, and a translation that lost one is redone around them.
 
 ## How it works
 

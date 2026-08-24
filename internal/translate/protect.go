@@ -17,15 +17,15 @@ type Translator interface {
 }
 
 var protectedSpan = regexp.MustCompile(strings.Join([]string{
-	"```(?s:.*?)```",                  // fenced code block
-	"`[^`\n]+`",                       // inline code
-	"\\](\\(\\s*<?[^)\\s]*>?\\s*\\))", // markdown link address
-	"<a?:[0-9A-Za-z_]+:[0-9]+>",       // custom emoji
-	"</[0-9A-Za-z_ -]+:[0-9]+>",       // slash command mention
-	"<@[!&]?[0-9]+>",                  // user or role mention
-	"<#[0-9]+>",                       // channel mention
-	"<t:[0-9]+(?::[tTdDfFR])?>",       // timestamp
-	"<https?://[^>\\s]+>",             // link with its embed suppressed
+	"```(?s:.*?)```", // fenced code block
+	"`[^`\n]+`",      // inline code
+	"\\[[^\\]]*\\]\\(\\s*<?[^)\\s]*>?\\s*\\)",             // markdown link, label and all
+	"<a?:[0-9A-Za-z_]+:[0-9]+>",                           // custom emoji
+	"</[0-9A-Za-z_ -]+:[0-9]+>",                           // slash command mention
+	"<@[!&]?[0-9]+>",                                      // user or role mention
+	"<#[0-9]+>",                                           // channel mention
+	"<t:[0-9]+(?::[tTdDfFR])?>",                           // timestamp
+	"<https?://[^>\\s]+>",                                 // link with its embed suppressed
 	"https?://[^\\s<>()\\[\\]]*[^\\s<>()\\[\\].,;:!?'\"]", // bare link
 	"@everyone",
 	"@here",
@@ -70,7 +70,8 @@ func (p *Protected) Translate(ctx context.Context, text string, sourceLang, targ
 		return restored, nil
 	}
 
-	log.Printf("translate: %v, translating around the protected spans instead", err)
+	log.Printf("translate: %v; sent %q, got %q; translating around the protected spans instead",
+		err, masked, translated)
 
 	return p.aroundSpans(ctx, parts, sourceLang, targetLang)
 }
@@ -116,15 +117,13 @@ func split(text string) []part {
 	var parts []part
 
 	end := 0
-	for _, match := range protectedSpan.FindAllStringSubmatchIndex(text, -1) {
-		start, stop := protectedRange(match)
-
-		if start > end {
-			parts = append(parts, part{text: text[end:start]})
+	for _, span := range protectedSpan.FindAllStringIndex(text, -1) {
+		if span[0] > end {
+			parts = append(parts, part{text: text[end:span[0]]})
 		}
 
-		parts = append(parts, part{text: text[start:stop], protected: true})
-		end = stop
+		parts = append(parts, part{text: text[span[0]:span[1]], protected: true})
+		end = span[1]
 	}
 
 	if end < len(text) {
@@ -132,18 +131,6 @@ func split(text string) []part {
 	}
 
 	return parts
-}
-
-// protectedRange is the part of a match that must not be translated: the
-// captured group where an alternative has one, the whole match otherwise.
-func protectedRange(match []int) (start, stop int) {
-	for i := 2; i+1 < len(match); i += 2 {
-		if match[i] >= 0 {
-			return match[i], match[i+1]
-		}
-	}
-
-	return match[0], match[1]
 }
 
 // mask swaps every protected part for its placeholder, returning the spans in
@@ -169,12 +156,12 @@ func mask(parts []part) (masked string, spans []string) {
 func restore(translated string, spans []string) (string, error) {
 	found := make([]int, len(spans))
 
-	var unknown error
+	var faults []string
 
 	out := placeholder.ReplaceAllStringFunc(translated, func(match string) string {
 		index, err := strconv.Atoi(placeholder.FindStringSubmatch(match)[1])
 		if err != nil || index >= len(spans) {
-			unknown = fmt.Errorf("%s came back as %s", plural(len(spans)), match)
+			faults = append(faults, match+" was never sent")
 			return match
 		}
 
@@ -183,27 +170,17 @@ func restore(translated string, spans []string) (string, error) {
 		return spans[index]
 	})
 
-	if unknown != nil {
-		return "", unknown
-	}
-
 	for index, times := range found {
 		if times != 1 {
-			return "", fmt.Errorf("{%d} came back %d times, not once", index, times)
+			faults = append(faults, fmt.Sprintf("{%d} came back %d times", index, times))
 		}
 	}
 
-	return out, nil
-}
-
-// plural names how many placeholders were sent,
-// for an error about one that came back as something else.
-func plural(spans int) string {
-	if spans == 1 {
-		return "the only placeholder"
+	if len(faults) > 0 {
+		return "", fmt.Errorf("of %d placeholders, %s", len(spans), strings.Join(faults, ", "))
 	}
 
-	return fmt.Sprintf("one of %d placeholders", spans)
+	return out, nil
 }
 
 func anyTranslatable(parts []part) bool {

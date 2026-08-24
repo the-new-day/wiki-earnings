@@ -14,7 +14,11 @@ import (
 	"github.com/the-new-day/wiki-earnings/internal/translate/mocks"
 )
 
-const tanksURL = "https://wiki.pro-tanki.online/ru/Tanks"
+const (
+	tanksURL    = "https://wiki.pro-tanki.online/ru/Tanks"
+	templateURL = "https://wiki.pro-tanki.online/ru/Шаблон:ContentMap"
+	settingsURL = "https://wiki.pro-tanki.online/ru/Настройки"
+)
 
 // model stands in for the translation backend. It hands the first request to
 // answer, which is where a test says what the model did to the placeholders,
@@ -46,9 +50,17 @@ func TestProtected_MasksWhatTheModelWouldCorrupt(t *testing.T) {
 		wantSent string
 	}{
 		{
-			name:     "a link keeps its label up for translation",
+			name:     "a link is protected whole, label and all",
 			text:     "Обновите [Танки](" + tanksURL + ") сегодня",
-			wantSent: "Обновите [Танки]{0} сегодня",
+			wantSent: "Обновите {0} сегодня",
+		},
+		{
+			// The placeholder used to sit against the "]" of the label before
+			// it, where m2m100 read the two as one token and lost both.
+			name: "a task with a link and a bare link in it",
+			text: "Скопировать шаблон [ContentMap](" + templateURL + ") и обновить страницу. " +
+				"Пример: " + settingsURL,
+			wantSent: "Скопировать шаблон {0} и обновить страницу. Пример: {1}",
 		},
 		{
 			name:     "a bare link is protected without the sentence punctuation after it",
@@ -118,7 +130,7 @@ func TestProtected_MasksWhatTheModelWouldCorrupt(t *testing.T) {
 		{
 			name:     "spans are numbered in the order they appear",
 			text:     "Смотри [Танки](" + tanksURL + "), пишите <#987> для <@&123>",
-			wantSent: "Смотри [Танки]{0}, пишите {1} для {2}",
+			wantSent: "Смотри {0}, пишите {1} для {2}",
 		},
 		{
 			name:     "a text with nothing to protect goes as it is",
@@ -179,7 +191,7 @@ func TestProtected_HandlesWhatTheModelDidToThePlaceholders(t *testing.T) {
 				return "{1} и {0}"
 			},
 			wantCalls: 1,
-			want:      "<@123> и (" + tanksURL + ")",
+			want:      "<@123> и [Танки](" + tanksURL + ")",
 		},
 		{
 			name: "a dropped placeholder sends it round the spans",

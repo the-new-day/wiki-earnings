@@ -24,14 +24,12 @@ type Postgres struct {
 	ConnectTimeout  time.Duration
 }
 
-// TaskTarget is where one locale's tasks are posted and what language they are
-// written in.
 type TaskTarget struct {
+	Locale    string
 	Language  entity.Language
 	ChannelID string
 }
 
-// Cloudflare is the Workers AI account tasks are translated through.
 type Cloudflare struct {
 	AccountID string
 	APIToken  string
@@ -40,18 +38,12 @@ type Cloudflare struct {
 type Discord struct {
 	BotToken string
 
-	// WikiRoleID and WikiAdminRoleID gate the bot's slash commands. Wiki Admin
-	// implicitly has Wiki access too.
 	WikiRoleID      string
 	WikiAdminRoleID string
 
-	// TaskTargets is where translated tasks go, per locale. A locale with no
-	// entry receives no tasks - that is how one is switched off.
 	TaskTargets map[string]TaskTarget
 }
 
-// DSN renders the connection string. The password is escaped rather than
-// interpolated, so it may contain anything.
 func (p Postgres) DSN() string {
 	u := url.URL{
 		Scheme: "postgres",
@@ -81,8 +73,7 @@ type Config struct {
 	// InitialLookback is how far back to start when a locale has no sync state yet.
 	InitialLookback time.Duration
 
-	// SyncMinInterval is how long a locale is left alone after a sync. Syncs
-	// are triggered per request, so without this every page load hits the wiki.
+	// SyncMinInterval is how long a locale is left alone after a sync.
 	SyncMinInterval time.Duration
 
 	// SyncMaxDuration budgets one sync run, which happens inside a user
@@ -90,20 +81,17 @@ type Config struct {
 	SyncMaxDuration time.Duration
 
 	// SyncConcurrency is how many edits are fetched in parallel. Each one costs
-	// three round trips to the wiki.
+	// up to three round trips to the wiki.
 	SyncConcurrency int
 
 	// MessageLifetime is the time the bot's message will be present in the chat.
-	// Not all commands should support this, only "temporary" ones.
 	// Zero lifetime means messages don't get deleted.
 	MessageLifetime time.Duration
 
 	DeadLetterMaxAttempts int
 	DeadLetterBatchSize   int
 
-	// ReplayInterval is how often dead-lettered revisions are retried. Unlike
-	// Sync, Replay is not triggered by requests, so something has to call it
-	// on a schedule or failures pile up forever.
+	// ReplayInterval is how often dead-lettered revisions are retried.
 	ReplayInterval time.Duration
 }
 
@@ -136,31 +124,10 @@ func Default() Config {
 	}
 }
 
-// TaskLanguages is every language tasks have to be translated into, each one
-// once - locales commonly share a language. The order follows Locales, so it
-// does not shift between runs the way map iteration would.
-func (c Config) TaskLanguages() []entity.Language {
-	langs := make([]entity.Language, 0, len(c.Discord.TaskTargets))
-	seen := make(map[entity.Language]bool, len(c.Discord.TaskTargets))
-
-	for _, locale := range c.Locales {
-		target, ok := c.Discord.TaskTargets[locale]
-		if !ok || seen[target.Language] {
-			continue
-		}
-
-		seen[target.Language] = true
-		langs = append(langs, target.Language)
-	}
-
-	return langs
-}
-
-// TaskChannels is the channels each language's task goes to. Locales sharing a
-// language share one translation and get a message each, so a language maps to
-// as many channels as there are locales behind it. The order follows Locales.
-func (c Config) TaskChannels() map[entity.Language][]string {
-	channels := make(map[entity.Language][]string, len(c.Discord.TaskTargets))
+// OrderedTaskTargets is every locale tasks can be posted to.
+// The order follows Locales.
+func (c Config) OrderedTaskTargets() []TaskTarget {
+	targets := make([]TaskTarget, 0, len(c.Discord.TaskTargets))
 
 	for _, locale := range c.Locales {
 		target, ok := c.Discord.TaskTargets[locale]
@@ -168,17 +135,15 @@ func (c Config) TaskChannels() map[entity.Language][]string {
 			continue
 		}
 
-		channels[target.Language] = append(channels[target.Language], target.ChannelID)
+		targets = append(targets, target)
 	}
 
-	return channels
+	return targets
 }
 
 // Load starts from Default and overlays whatever the environment sets. An
 // unset variable keeps the default; a set but unparsable one is an error.
 func Load() (Config, error) {
-	// Reads keep their first failure instead of returning it, so this reads as
-	// the list of variables it is rather than as a chain of identical checks.
 	var e env
 
 	cfg := Default()
@@ -229,9 +194,6 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("config: WIKI_ADMIN_ROLE_ID not set")
 	}
 
-	// Only needed once something is set up to receive tasks. Checked here
-	// rather than on the first /task, so a half-configured bot says so at
-	// startup instead of at the moment somebody needs it.
 	if len(cfg.Discord.TaskTargets) > 0 {
 		if cfg.Cloudflare.AccountID == "" {
 			return Config{}, fmt.Errorf("config: CLOUDFLARE_ACCOUNT_ID not set, but TASK_TARGETS is")
@@ -392,7 +354,7 @@ func taskTarget(entry string) (locale string, target TaskTarget, err error) {
 		return "", TaskTarget{}, fmt.Errorf("entry %q: no channel id", entry)
 	}
 
-	return locale, TaskTarget{Language: lang, ChannelID: channelID}, nil
+	return locale, TaskTarget{Locale: locale, Language: lang, ChannelID: channelID}, nil
 }
 
 // splitTrim cuts a comma separated variable into its values, dropping the

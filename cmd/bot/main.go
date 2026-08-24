@@ -48,8 +48,7 @@ func run() error {
 		cfg.MessageLifetime,
 		discord.TaskConfig{
 			Translator: translate.NewCloudflare(cfg.Cloudflare.AccountID, cfg.Cloudflare.APIToken),
-			Languages:  cfg.TaskLanguages(),
-			Channels:   cfg.TaskChannels(),
+			Targets:    taskTargets(cfg),
 		},
 	)
 	if err != nil {
@@ -82,6 +81,21 @@ func run() error {
 	}
 
 	return botErr
+}
+
+func taskTargets(cfg config.Config) []discord.TaskTarget {
+	configured := cfg.OrderedTaskTargets()
+	targets := make([]discord.TaskTarget, 0, len(configured))
+
+	for _, target := range configured {
+		targets = append(targets, discord.TaskTarget{
+			Locale:    target.Locale,
+			Language:  target.Language,
+			ChannelID: target.ChannelID,
+		})
+	}
+
+	return targets
 }
 
 // runReplayLoop retries dead-lettered revisions on a schedule.

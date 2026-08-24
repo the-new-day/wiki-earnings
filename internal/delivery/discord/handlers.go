@@ -36,10 +36,18 @@ func (b *Bot) handleInteractionCreate(
 	i *discordgo.InteractionCreate,
 	messageLifetime time.Duration,
 ) {
-	if i.Type != discordgo.InteractionApplicationCommand {
-		return
+	switch i.Type {
+	case discordgo.InteractionApplicationCommand:
+		b.handleCommand(i, messageLifetime)
+	case discordgo.InteractionApplicationCommandAutocomplete:
+		b.handleAutocomplete(i)
 	}
+}
 
+func (b *Bot) handleCommand(
+	i *discordgo.InteractionCreate,
+	messageLifetime time.Duration,
+) {
 	data := i.ApplicationCommandData()
 
 	switch data.Name {
@@ -60,10 +68,43 @@ func (b *Bot) handleInteractionCreate(
 	}
 }
 
+func (b *Bot) handleAutocomplete(i *discordgo.InteractionCreate) {
+	data := i.ApplicationCommandData()
+
+	focused := focusedOption(data)
+	if focused == nil || data.Name != "task" || focused.Name != "locales" {
+		return
+	}
+
+	raw, _ := focused.Value.(string)
+
+	err := b.session.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+		Data: &discordgo.InteractionResponseData{
+			Choices: localeSuggestions(raw, b.tasks.Locales()),
+		},
+	})
+	if err != nil {
+		log.Printf("discord: autocomplete: %v", err)
+	}
+}
+
+func focusedOption(
+	data discordgo.ApplicationCommandInteractionData,
+) *discordgo.ApplicationCommandInteractionDataOption {
+	for _, opt := range data.Options {
+		if opt.Focused {
+			return opt
+		}
+	}
+
+	return nil
+}
+
 // runGated checks role membership, then immediately defers so Discord stops waiting
 // on the 3-second ack window, and runs fn in the background. When fn returns,
 // the deferred "thinking" message is edited into the real result.
-// if messageLifetime is not zero, the message will be deleted after that time passes.
+// If messageLifetime is not zero, the message will be deleted after that time passes.
 func (b *Bot) runGated(
 	i *discordgo.InteractionCreate,
 	data discordgo.ApplicationCommandInteractionData,
@@ -212,9 +253,9 @@ func formatEdits(nickname string, from time.Time, payslip earnings.Payslip, show
 	return result.String()
 }
 
-// handleTask posts a task to every configured locale, translated out of the
-// language it was written in. That defaults to Russian, which is what most of
-// the people writing tasks use, but it is theirs to say.
+// handleTask posts a task to the locales it was addressed to, or to all of them
+// when it was addressed to none, translated out of the language it was written
+// in. That defaults to Russian.
 func (b *Bot) handleTask(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
@@ -222,17 +263,22 @@ func (b *Bot) handleTask(
 	_ func(string),
 ) (string, error) {
 	text := data.GetOption("text").StringValue()
+	locales := parseLocales(optionalString(data, "locales"))
 
 	sourceLang, err := optionalLanguage(data, "source_lang", entity.LangRU)
 	if err != nil {
 		return "", err
 	}
 
-	if err := b.tasks.PostTask(ctx, text, sourceLang); err != nil {
+	if err := b.tasks.PostTask(ctx, text, sourceLang, locales); err != nil {
 		return "", err
 	}
 
-	return "Task posted.", nil
+	if len(locales) == 0 {
+		return "Task posted to every locale.", nil
+	}
+
+	return fmt.Sprintf("Task posted to %s.", strings.Join(locales, ", ")), nil
 }
 
 func (b *Bot) handleReport(

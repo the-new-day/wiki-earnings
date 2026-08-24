@@ -66,10 +66,10 @@ func TestLoad_TaskTargets(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, map[string]config.TaskTarget{
-		"ru": {Language: entity.LangRU, ChannelID: "100"},
-		"ua": {Language: entity.LangRU, ChannelID: "200"},
-		"en": {Language: entity.LangEN, ChannelID: "300"},
-		"br": {Language: entity.LangEN, ChannelID: "400"},
+		"ru": {Locale: "ru", Language: entity.LangRU, ChannelID: "100"},
+		"ua": {Locale: "ua", Language: entity.LangRU, ChannelID: "200"},
+		"en": {Locale: "en", Language: entity.LangEN, ChannelID: "300"},
+		"br": {Locale: "br", Language: entity.LangEN, ChannelID: "400"},
 	}, cfg.Discord.TaskTargets)
 }
 
@@ -109,8 +109,9 @@ func TestLoad_TaskTargetsRejectBadInput(t *testing.T) {
 	}
 }
 
-// Locales sharing a language are translated once, not once each.
-func TestTaskLanguages_DedupesInLocaleOrder(t *testing.T) {
+// The order locales are offered in comes from LOCALES, not from however
+// TASK_TARGETS happened to be written or a map happened to be walked.
+func TestOrderedTaskTargets_FollowsLocaleOrder(t *testing.T) {
 	required(t)
 	tasks(t)
 	t.Setenv("LOCALES", "ru,ua,en,br")
@@ -119,32 +120,38 @@ func TestTaskLanguages_DedupesInLocaleOrder(t *testing.T) {
 	cfg, err := config.Load()
 
 	require.NoError(t, err)
-	assert.Equal(t, []entity.Language{entity.LangRU, entity.LangEN}, cfg.TaskLanguages())
+	assert.Equal(t, []config.TaskTarget{
+		{Locale: "ru", Language: entity.LangRU, ChannelID: "100"},
+		{Locale: "ua", Language: entity.LangRU, ChannelID: "200"},
+		{Locale: "en", Language: entity.LangEN, ChannelID: "300"},
+		{Locale: "br", Language: entity.LangEN, ChannelID: "400"},
+	}, cfg.OrderedTaskTargets())
 }
 
-func TestTaskLanguages_EmptyWithoutTargets(t *testing.T) {
-	required(t)
-
-	cfg, err := config.Load()
-
-	require.NoError(t, err)
-	assert.Empty(t, cfg.TaskLanguages())
-}
-
-// Locales sharing a language each keep their own channel.
-func TestTaskChannels_GroupsLocalesByLanguage(t *testing.T) {
+// A locale with no target is not offered, so nobody can pick somewhere the task
+// has no way of reaching.
+func TestOrderedTaskTargets_SkipsLocalesWithoutTargets(t *testing.T) {
 	required(t)
 	tasks(t)
 	t.Setenv("LOCALES", "ru,ua,en,br")
-	t.Setenv("TASK_TARGETS", "ru:ru:100, ua:ru:200, en:en:300, br:en:400")
+	t.Setenv("TASK_TARGETS", "ru:ru:100, en:en:300")
 
 	cfg, err := config.Load()
 
 	require.NoError(t, err)
-	assert.Equal(t, map[entity.Language][]string{
-		entity.LangRU: {"100", "200"},
-		entity.LangEN: {"300", "400"},
-	}, cfg.TaskChannels())
+	assert.Equal(t, []config.TaskTarget{
+		{Locale: "ru", Language: entity.LangRU, ChannelID: "100"},
+		{Locale: "en", Language: entity.LangEN, ChannelID: "300"},
+	}, cfg.OrderedTaskTargets())
+}
+
+func TestOrderedTaskTargets_EmptyWithoutTargets(t *testing.T) {
+	required(t)
+
+	cfg, err := config.Load()
+
+	require.NoError(t, err)
+	assert.Empty(t, cfg.OrderedTaskTargets())
 }
 
 // Task targets without a translator behind them would fail on the first /task,

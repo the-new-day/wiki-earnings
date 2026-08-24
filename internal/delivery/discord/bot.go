@@ -21,12 +21,20 @@ func init() {
 	registerCommands()
 }
 
+// TaskTarget is one locale /task can post to: the language its editors read
+// tasks in, and the channel they read them from.
+type TaskTarget struct {
+	Locale    string
+	Language  entity.Language
+	ChannelID string
+}
+
 // TaskConfig is what the bot needs to serve /task: how to translate the text,
-// which languages to translate it into, and where each language's text goes.
+// and which locales it can be sent to. The order of Targets is the order the
+// locales are offered in.
 type TaskConfig struct {
 	Translator tasks.Translator
-	Languages  []entity.Language
-	Channels   map[entity.Language][]string
+	Targets    []TaskTarget
 }
 
 type Bot struct {
@@ -40,7 +48,9 @@ type Bot struct {
 	wikiRoleID      string
 	wikiAdminRoleID string
 
-	taskChannels map[entity.Language][]string
+	// taskChannels is where each locale reads tasks. Which locales exist at all
+	// is the use case's to say - this only answers where one of them lands.
+	taskChannels map[string]string
 }
 
 // New creates a session and wires up handlers. It doesn't connect yet — call Run for that.
@@ -67,13 +77,13 @@ func New(
 		resync:          resyncUC,
 		wikiRoleID:      wikiRoleID,
 		wikiAdminRoleID: wikiAdminRoleID,
-		taskChannels:    taskCfg.Channels,
+		taskChannels:    taskChannels(taskCfg.Targets),
 	}
 
 	// The bot is both what triggers a task and where it lands, so it builds the
 	// use case itself. Wiring it from outside would need the bot to exist first
 	// and then be handed the use case, leaving a window where /task panics.
-	bot.tasks = tasks.New(taskCfg.Translator, bot, taskCfg.Languages)
+	bot.tasks = tasks.New(taskCfg.Translator, bot, taskTargets(taskCfg.Targets))
 	session.AddHandler(bot.handleReady)
 	session.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		bot.handleInteractionCreate(i, messageLifetime)
@@ -120,6 +130,30 @@ func (b *Bot) handleMessageCreate(s *discordgo.Session, m *discordgo.MessageCrea
 	}
 
 	log.Printf("discord: [%s] %s: %s", m.ChannelID, m.Author.Username, m.Content)
+}
+
+// taskChannels is the delivery half of the targets: which channel a locale's
+// task lands in.
+func taskChannels(targets []TaskTarget) map[string]string {
+	channels := make(map[string]string, len(targets))
+
+	for _, target := range targets {
+		channels[target.Locale] = target.ChannelID
+	}
+
+	return channels
+}
+
+// taskTargets is the half the use case needs: which locales exist and what
+// language each one reads.
+func taskTargets(targets []TaskTarget) []tasks.Target {
+	converted := make([]tasks.Target, 0, len(targets))
+
+	for _, target := range targets {
+		converted = append(converted, tasks.Target{Locale: target.Locale, Language: target.Language})
+	}
+
+	return converted
 }
 
 // languageChoices offers every language the service knowse.
@@ -187,6 +221,12 @@ func registerCommands() {
 					Name:        "text",
 					Description: "Text of the task",
 					Required:    true,
+				},
+				{
+					Type:         discordgo.ApplicationCommandOptionString,
+					Name:         "locales",
+					Description:  "Locales to post to, comma separated. All of them by default",
+					Autocomplete: true,
 				},
 				{
 					Type:        discordgo.ApplicationCommandOptionString,

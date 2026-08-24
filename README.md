@@ -75,7 +75,7 @@ it is shown first, tagged "Refreshing with latest edits…", and replaced once t
 | `/report [month]` | Wiki Admin | public | What every editor earned that month |
 | `/commands [month]` | Wiki Admin | public | Ready-to-paste `/givecry` and `/addpremium` lines |
 | `/changepay <nickname> <edit_id> <new_cost> [locale]` | Wiki Admin | ephemeral | Reprice one revision by hand |
-| `/task <text> [source_lang]` | Wiki Admin | ephemeral | Translate a task and post it to every locale's channel |
+| `/task <text> [locales] [source_lang]` | Wiki Admin | ephemeral | Translate a task and post it to a locale's channel |
 | `/resync` | Wiki Admin | ephemeral | Wipe sync state and recompute from scratch |
 
 Details:
@@ -87,11 +87,17 @@ Details:
   `edit_id` is unique within one wiki, not across them. Left out and ambiguous, the bot asks for it.
   A manual price overrides anything computed, flat rates included, and is journalled in
   `revision_price_overrides` along with who set it.
-- **`/task`** translates the text once per language in `TASK_TARGETS` and posts each translation to
-  the channels of the locales behind that language. Locales sharing a language share one translation
-  and get their own message; the language the text was written in is posted as it stands, untouched.
-  A translation that fails stops the whole post: quietly sending the original to a channel that
-  expects another language is worse than not sending.
+- **`/task`** posts the text to one channel per locale, translated into the language that locale
+  reads. Locales sharing a language share one translation and get their own message; the language
+  the text was written in is posted as it stands, untouched. A translation that fails stops the
+  whole post: quietly sending the original to a channel that expects another language is worse than
+  not sending.
+- **`locales`** picks who gets the task. Left out, everything in `TASK_TARGETS` does. The field
+  suggests as you type, one locale at a time: with nothing typed it offers **All locales** first,
+  then each locale on its own; type a comma after what you have picked and it offers the rest, so a
+  selection is built up by picking rather than by remembering codes. Typing them by hand works too -
+  commas and spaces both separate, and case does not matter. A locale that is not in `TASK_TARGETS`
+  stops the post and the bot answers with the ones that are, rather than posting to the rest.
 - **`source_lang`** says which language the task is written in. It defaults to Russian and offers
   every language the service knows, so an English-speaking admin can write in English and have the
   Russian channels translated instead.
@@ -106,8 +112,8 @@ Details:
 
 ## Translation
 
-`/task` is translated once per target language before it is posted, out of whatever language it was
-written in - Russian unless `source_lang` says otherwise. The
+`/task` is translated once per language among the locales it was sent to, out of whatever language
+it was written in - Russian unless `source_lang` says otherwise. The
 translation runs through [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/),
 model `@cf/meta/m2m100-1.2b`, over plain HTTP - no SDK, no infrastructure.
 
@@ -253,7 +259,7 @@ works as long as the three required variables are in the environment. `.env.exam
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `LOCALES` | `ru,ua,en,br` | Language wikis to read, comma separated |
-| `TASK_TARGETS` | none | Where `/task` posts: `<locale>:<language>:<channel id>` per locale, comma separated. A locale left out receives no tasks |
+| `TASK_TARGETS` | none | Where `/task` can post: `<locale>:<language>:<channel id>` per locale, comma separated. A locale left out is not offered and receives no tasks |
 | `CLOUDFLARE_ACCOUNT_ID` | none | Workers AI account `/task` translates through. Required once `TASK_TARGETS` is set |
 | `CLOUDFLARE_API_TOKEN` | none | Workers AI token, with the Workers AI Read and Edit permissions |
 | `SYNC_BATCH_SIZE` | `500` | Revisions per request to the wiki (MediaWiki's ceiling) |

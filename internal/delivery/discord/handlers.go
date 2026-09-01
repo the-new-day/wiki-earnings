@@ -61,6 +61,10 @@ func (b *Bot) handleCommand(
 		b.runGated(i, data, []string{b.wikiAdminRoleID}, false, b.handleReport, 0)
 	case "changepay":
 		b.runGated(i, data, []string{b.wikiAdminRoleID}, true, b.handleChangePay, 0)
+	case "correction":
+		b.runGated(i, data, []string{b.wikiAdminRoleID}, true, b.handleCorrection, 0)
+	case "removecorrection":
+		b.runGated(i, data, []string{b.wikiAdminRoleID}, true, b.handleRemoveCorrection, 0)
 	case "paynick":
 		b.runGated(i, data, []string{b.wikiAdminRoleID}, true, b.handlePayNick, 0)
 	case "commands":
@@ -225,15 +229,20 @@ func formatEdits(nickname string, from time.Time, payslip earnings.Payslip, show
 		}
 
 		// example:
-		// * [2026-08-20|13052] ((NA)): [Main Page](https://wiki.pro-tanki.online/en/Main_Page)
+		// * [2026-08-20|13052] ((NA)): [Main Page](<https://wiki.pro-tanki.online/en/Main_Page>)
 		//   10 310 💎 (changed)
+		//
+		// Links are wrapped in <> to kill the preview embed. The SuppressEmbeds
+		// message flag would do it too, but this answer is delivered by editing
+		// the deferred interaction response, and Discord drops that flag on an
+		// edit -- unlike /task, which posts a fresh message that keeps it.
 		costChangedText := ""
 		if rev.CostOverridden {
 			costChangedText = "(changed)"
 		}
 
 		fmt.Fprintf(&body,
-			"* [%s|%d] %s: [%s](%s%s/%s)\n  %d 💎 %s\n",
+			"* [%s|%d] %s: [%s](<%s%s/%s>)\n  %d 💎 %s\n",
 			rev.EditedAt.Format(dayLayout), rev.RevID, revTypeToString(rev.Type),
 			rev.PageTitle, mediawiki.WikiUrl, rev.Locale, strings.ReplaceAll(rev.PageTitle, " ", "_"),
 			rev.Cost, costChangedText,
@@ -251,6 +260,20 @@ func formatEdits(nickname string, from time.Time, payslip earnings.Payslip, show
 
 	result.WriteByte('\n')
 	fmt.Fprint(&result, body.String())
+
+	if len(payslip.PaymentCorrections) > 0 {
+		fmt.Fprint(&result, "\nCorrections:\n")
+
+		for _, corr := range payslip.PaymentCorrections {
+			// example:
+			// * [2026-08-22|41] +5 000 💎: compensation for the lost edit
+			// The number after the date is the correction id, for /removecorrection.
+			fmt.Fprintf(&result,
+				"* [%s|%d] %+d 💎: %s\n",
+				corr.CreatedAt.Format(dayLayout), corr.CorrectionID, corr.Amount, corr.Description,
+			)
+		}
+	}
 
 	return result.String()
 }
@@ -353,6 +376,54 @@ func (b *Bot) handleChangePay(
 	return fmt.Sprintf("Cost changed to %d.", newCost), nil
 }
 
+func (b *Bot) handleCorrection(
+	ctx context.Context,
+	i *discordgo.InteractionCreate,
+	data discordgo.ApplicationCommandInteractionData,
+	_ func(string),
+) (string, error) {
+	nickname := data.GetOption("nickname").StringValue()
+	amount := data.GetOption("amount").IntValue()
+	description := data.GetOption("description").StringValue()
+	createdBy := fmt.Sprintf("%s (%s)", i.Member.User.Username, i.Member.User.ID)
+
+	// No month: book it now. A month: book it at that month's first instant, so
+	// the report for that month picks it up.
+	appliesAt := time.Now().UTC()
+	if raw := optionalString(data, "month"); raw != "" {
+		from, _, err := monthRange(raw)
+		if err != nil {
+			return "", err
+		}
+		appliesAt = from
+	}
+
+	corr, err := b.corrections.AddPaymentCorrection(ctx, nickname, description, amount, createdBy, appliesAt)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf(
+		"Correction #%d of %d 💎 added for %s (%s): %s",
+		corr.CorrectionID, corr.Amount, nickname, monthToText(corr.AppliesAt), corr.Description,
+	), nil
+}
+
+func (b *Bot) handleRemoveCorrection(
+	ctx context.Context,
+	i *discordgo.InteractionCreate,
+	data discordgo.ApplicationCommandInteractionData,
+	_ func(string),
+) (string, error) {
+	id := data.GetOption("id").IntValue()
+
+	if err := b.corrections.RemoveCorrection(ctx, id); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("Correction #%d removed.", id), nil
+}
+
 func (b *Bot) handlePayNick(
 	ctx context.Context,
 	i *discordgo.InteractionCreate,
@@ -414,7 +485,9 @@ func formatCommands(report earnings.Report) string {
 	result.WriteString("```\n")
 
 	for _, editorEarnings := range report.Editors {
-		if editorEarnings.Total == 0 {
+		// A correction can leave a total at or below zero; there is no chat
+		// command to hand out nothing, so skip the row.
+		if editorEarnings.Total <= 0 {
 			continue
 		}
 
@@ -516,8 +589,10 @@ func monthToText(timestamp time.Time) string {
 }
 
 func earningsToString(amount int) string {
-	if amount < 0 {
-		panic(fmt.Sprintf("earningsToString: amount = %d", amount))
+	// A payment correction can pull a total to zero or below. No premium is
+	// owed then -- just show the crystal figure.
+	if amount <= 0 {
+		return fmt.Sprintf("%d 💎", amount)
 	}
 
 	daysOfPrem := pricing.DaysPremium(amount)

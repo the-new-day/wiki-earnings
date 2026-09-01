@@ -9,6 +9,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/corrections"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/earnings"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/editors"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/resync"
@@ -41,11 +42,12 @@ type TaskConfig struct {
 type Bot struct {
 	session *discordgo.Session
 
-	earnings  *earnings.UseCase
-	editors   *editors.UseCase
-	revisions *revisions.UseCase
-	resync    *resync.UseCase
-	tasks     *tasks.UseCase
+	earnings    *earnings.UseCase
+	editors     *editors.UseCase
+	revisions   *revisions.UseCase
+	resync      *resync.UseCase
+	corrections *corrections.UseCase
+	tasks       *tasks.UseCase
 
 	wikiRoleID      string
 	wikiAdminRoleID string
@@ -62,6 +64,7 @@ func New(
 	editorsUC *editors.UseCase,
 	revisionsUC *revisions.UseCase,
 	resyncUC *resync.UseCase,
+	correctionsUC *corrections.UseCase,
 	wikiRoleID, wikiAdminRoleID string,
 	messageLifetime time.Duration,
 	taskCfg TaskConfig,
@@ -79,6 +82,7 @@ func New(
 		editors:         editorsUC,
 		revisions:       revisionsUC,
 		resync:          resyncUC,
+		corrections:     correctionsUC,
 		wikiRoleID:      wikiRoleID,
 		wikiAdminRoleID: wikiAdminRoleID,
 		taskChannels:    taskChannels(taskCfg.Targets),
@@ -277,6 +281,47 @@ func registerCommands() {
 					Type:        discordgo.ApplicationCommandOptionString,
 					Name:        "locale",
 					Description: "Wiki locale (needed if the editor has multiple accounts)",
+				},
+			},
+		},
+		{
+			Name:        "correction",
+			Description: "Add a payment correction for an editor (amount may be negative)",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "nickname",
+					Description: "Editor's nickname on the Wiki",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionInteger,
+					Name:        "amount",
+					Description: "Crystals to add, or subtract if negative",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "description",
+					Description: "Why the correction is made",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "month",
+					Description: "Month to book it in, YYYY-MM. Current by default",
+				},
+			},
+		},
+		{
+			Name:        "removecorrection",
+			Description: "Remove a payment correction by its id (shown in /edits)",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionInteger,
+					Name:        "id",
+					Description: "Correction id, as shown in /edits",
+					Required:    true,
 				},
 			},
 		},

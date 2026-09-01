@@ -11,6 +11,7 @@ packages:
       EditorReader: {}
       RevisionReader: {}
       Syncer: {}
+      PaymentCorrectionReader: {}
   github.com/the-new-day/wiki-earnings/internal/usecase/editors:
     interfaces:
       Repository: {}

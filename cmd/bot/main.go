@@ -44,6 +44,7 @@ func run() error {
 		a.Editors,
 		a.Revisions,
 		a.Resync,
+		a.Corrections,
 		cfg.Discord.WikiRoleID,
 		cfg.Discord.WikiAdminRoleID,
 		cfg.MessageLifetime,

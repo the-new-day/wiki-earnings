@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS editor_payment_corrections_editor_applies_at_idx;
+DROP TABLE IF EXISTS editor_payment_corrections;

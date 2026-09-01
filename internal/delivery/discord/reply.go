@@ -48,7 +48,7 @@ func errorText(err error) (text string, hasExplanation bool) {
 	case errors.Is(err, revisions.ErrLocaleRequired):
 		return fmt.Sprintf("%v. This editor has multiple accounts. Specify the locale and repeat the command.", err), true
 	case errors.Is(err, storage.ErrNotFound):
-		return "The editor or the edit not found.", true
+		return "The editor, edit, or correction was not found.", true
 	case errors.Is(err, tasks.ErrUnknownLocale):
 		return fmt.Sprintf("Nothing was posted: %v.", err), true
 	case errors.Is(err, tasks.ErrNoTargets), errors.Is(err, ErrNoTaskChannels):
@@ -163,23 +163,26 @@ func (r *reply) remove() {
 	}
 }
 
-// fail tells the user privately what went wrong and takes the reply down,
-// placeholder included.
+// fail replaces whatever the reply shows with the error, in place. It does not
+// delete anything: a followup posted and then orphaned by deleting the original
+// response gets torn down by Discord a moment later, which is why the "specify
+// the locale" message used to blink out. An edited message stays until the user
+// dismisses it (ephemeral) or forever (public).
 func (r *reply) fail(err error) {
 	text, known := errorText(err)
 	if !known {
 		log.Printf("discord: %v", err)
 	}
 
-	_, sendErr := r.bot.session.FollowupMessageCreate(r.interaction.Interaction, true, &discordgo.WebhookParams{
-		Content: text,
-		Flags:   outgoingFlags(true),
-	})
-	if sendErr != nil {
-		log.Printf("discord: send error: %v", sendErr)
-	}
+	r.trimFollowups(0)
 
-	r.remove()
+	_, editErr := r.bot.session.InteractionResponseEdit(
+		r.interaction.Interaction,
+		&discordgo.WebhookEdit{Content: &text},
+	)
+	if editErr != nil {
+		log.Printf("discord: send error: %v", editErr)
+	}
 }
 
 func (r *reply) flags() discordgo.MessageFlags {

@@ -35,23 +35,25 @@ var (
 // so an unmet expectation fails the test at cleanup and a call nobody set up
 // fails it on the spot.
 type deps struct {
-	editors   *mocks.MockEditorReader
-	revisions *mocks.MockRevisionReader
-	syncer    *mocks.MockSyncer
+	editors     *mocks.MockEditorReader
+	revisions   *mocks.MockRevisionReader
+	corrections *mocks.MockPaymentCorrectionReader
+	syncer      *mocks.MockSyncer
 }
 
 func newDeps(t *testing.T) deps {
 	t.Helper()
 
 	return deps{
-		editors:   mocks.NewMockEditorReader(t),
-		revisions: mocks.NewMockRevisionReader(t),
-		syncer:    mocks.NewMockSyncer(t),
+		editors:     mocks.NewMockEditorReader(t),
+		revisions:   mocks.NewMockRevisionReader(t),
+		corrections: mocks.NewMockPaymentCorrectionReader(t),
+		syncer:      mocks.NewMockSyncer(t),
 	}
 }
 
 func (d deps) useCase() *earnings.UseCase {
-	return earnings.New(d.editors, d.revisions, d.syncer)
+	return earnings.New(d.editors, d.revisions, d.corrections, d.syncer)
 }
 
 // expectSync sets up the refresh every read starts with.
@@ -68,6 +70,7 @@ func (d deps) expectSums(total int64, revisions []entity.Revision, err error) {
 	}
 
 	d.revisions.EXPECT().ListByEditor(mock.Anything, editor.EditorID, from, to).Return(revisions, nil).Once()
+	d.corrections.EXPECT().ListByEditor(mock.Anything, editor.EditorID, from, to).Return(nil, nil).Once()
 }
 
 func TestUseCase_ForNickname(t *testing.T) {
@@ -230,6 +233,7 @@ func TestUseCase_Report(t *testing.T) {
 			arrange: func(d deps) {
 				d.expectSync(nil)
 				d.revisions.EXPECT().SumCostByEditor(mock.Anything, from, to).Return(payroll, nil).Once()
+				d.corrections.EXPECT().SumByEditor(mock.Anything, from, to).Return(nil, nil).Once()
 			},
 			assert: func(t *testing.T, got earnings.Report) {
 				assert.Equal(t, payroll, got.Editors)
@@ -244,6 +248,7 @@ func TestUseCase_Report(t *testing.T) {
 			arrange: func(d deps) {
 				d.expectSync(nil)
 				d.revisions.EXPECT().SumCostByEditor(mock.Anything, from, to).Return(nil, nil).Once()
+				d.corrections.EXPECT().SumByEditor(mock.Anything, from, to).Return(nil, nil).Once()
 			},
 			assert: func(t *testing.T, got earnings.Report) {
 				assert.Zero(t, got.Total)
@@ -255,6 +260,7 @@ func TestUseCase_Report(t *testing.T) {
 			arrange: func(d deps) {
 				d.expectSync(errWiki)
 				d.revisions.EXPECT().SumCostByEditor(mock.Anything, from, to).Return(payroll, nil).Once()
+				d.corrections.EXPECT().SumByEditor(mock.Anything, from, to).Return(nil, nil).Once()
 			},
 			assert: func(t *testing.T, got earnings.Report) {
 				assert.EqualValues(t, 350, got.Total)
@@ -288,6 +294,56 @@ func TestUseCase_Report(t *testing.T) {
 			tt.assert(t, got)
 		})
 	}
+}
+
+// A payslip's total is what the edits came to plus every correction in the
+// period, and the corrections themselves are carried on the payslip.
+func TestUseCase_PayslipIncludesCorrections(t *testing.T) {
+	corrections := []entity.PaymentCorrection{
+		{CorrectionID: 1, EditorID: editor.EditorID, Amount: 1000, Description: "bonus"},
+		{CorrectionID: 2, EditorID: editor.EditorID, Amount: -300, Description: "clawback"},
+	}
+
+	d := newDeps(t)
+	d.expectSync(nil)
+	d.editors.EXPECT().FindByNickname(mock.Anything, editor.Nickname).Return(editor, nil).Once()
+	d.revisions.EXPECT().SumCostForEditor(mock.Anything, editor.EditorID, from, to).Return(4200, nil).Once()
+	d.revisions.EXPECT().ListByEditor(mock.Anything, editor.EditorID, from, to).Return(editorRevisions, nil).Once()
+	d.corrections.EXPECT().ListByEditor(mock.Anything, editor.EditorID, from, to).Return(corrections, nil).Once()
+
+	got, err := d.useCase().ForNickname(context.Background(), editor.Nickname, from, to)
+
+	require.NoError(t, err)
+	assert.EqualValues(t, 4200+1000-300, got.Total)
+	assert.Equal(t, corrections, got.PaymentCorrections)
+}
+
+// The report folds corrections into each editor's total, and an editor whose
+// only entry in the period is a correction still gets a row.
+func TestUseCase_ReportMergesCorrections(t *testing.T) {
+	payroll := []entity.EditorEarnings{
+		{EditorID: 1, Nickname: "alpha", Total: 100},
+		{EditorID: 2, Nickname: "beta", Total: 250},
+	}
+	corrections := []entity.EditorEarnings{
+		{EditorID: 2, Nickname: "beta", Total: -50},
+		{EditorID: 3, Nickname: "gamma", Total: 500},
+	}
+
+	d := newDeps(t)
+	d.expectSync(nil)
+	d.revisions.EXPECT().SumCostByEditor(mock.Anything, from, to).Return(payroll, nil).Once()
+	d.corrections.EXPECT().SumByEditor(mock.Anything, from, to).Return(corrections, nil).Once()
+
+	got, err := d.useCase().Report(context.Background(), from, to)
+
+	require.NoError(t, err)
+	assert.Equal(t, []entity.EditorEarnings{
+		{EditorID: 1, Nickname: "alpha", Total: 100},
+		{EditorID: 2, Nickname: "beta", Total: 200},
+		{EditorID: 3, Nickname: "gamma", Total: 500},
+	}, got.Editors)
+	assert.EqualValues(t, 800, got.Total)
 }
 
 // An editor whose first edit landed since the last sync has no row yet. Sync
@@ -360,12 +416,14 @@ func TestUseCase_RejectsEmptyPeriod(t *testing.T) {
 func TestUseCase_NilSyncerReadsWhatIsStored(t *testing.T) {
 	editors := mocks.NewMockEditorReader(t)
 	revisions := mocks.NewMockRevisionReader(t)
+	corrections := mocks.NewMockPaymentCorrectionReader(t)
 
 	editors.EXPECT().GetByID(mock.Anything, editor.EditorID).Return(editor, nil).Once()
 	revisions.EXPECT().SumCostForEditor(mock.Anything, editor.EditorID, from, to).Return(4200, nil).Once()
 	revisions.EXPECT().ListByEditor(mock.Anything, editor.EditorID, from, to).Return(editorRevisions, nil).Once()
+	corrections.EXPECT().ListByEditor(mock.Anything, editor.EditorID, from, to).Return(nil, nil).Once()
 
-	got, err := earnings.New(editors, revisions, nil).ForEditor(context.Background(), editor.EditorID, from, to)
+	got, err := earnings.New(editors, revisions, corrections, nil).ForEditor(context.Background(), editor.EditorID, from, to)
 
 	require.NoError(t, err)
 	assert.EqualValues(t, 4200, got.Total)

@@ -1,9 +1,11 @@
 package earnings
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/the-new-day/wiki-earnings/internal/domain/entity"
@@ -28,6 +30,16 @@ type RevisionReader interface {
 	ListByEditor(ctx context.Context, editorID int64, from, to time.Time) ([]entity.Revision, error)
 }
 
+// PaymentCorrectionReader looks up manual payment corrections: one-off amounts
+// an admin adds or subtracts on top of what the edits came to. Amounts may be
+// negative.
+type PaymentCorrectionReader interface {
+	ListByEditor(ctx context.Context, editorID int64, from, to time.Time) ([]entity.PaymentCorrection, error)
+	// SumByEditor totals corrections per editor over [from, to), for the report.
+	// Editors with no correction in the period are left out.
+	SumByEditor(ctx context.Context, from, to time.Time) ([]entity.EditorEarnings, error)
+}
+
 // Syncer brings storage up to date with the wiki. It is called before every
 // read so the figures are not stale, but it is not this package's business how
 // it does that -- batching, throttling and locking live on the other side.
@@ -37,11 +49,12 @@ type Syncer interface {
 
 // Payslip is one editor's earnings over a period.
 type Payslip struct {
-	Editor    entity.Editor
-	From      time.Time
-	To        time.Time
-	Total     int64
-	Revisions []entity.Revision
+	Editor             entity.Editor
+	From               time.Time
+	To                 time.Time
+	Total              int64
+	Revisions          []entity.Revision
+	PaymentCorrections []entity.PaymentCorrection
 
 	// SyncErr is set when the sync before this read failed. The figures below
 	// are still correct for what is stored -- they may just be missing the
@@ -62,22 +75,29 @@ type Report struct {
 }
 
 type UseCase struct {
-	editors   EditorReader
-	revisions RevisionReader
-	syncer    Syncer
+	editors     EditorReader
+	revisions   RevisionReader
+	corrections PaymentCorrectionReader
+	syncer      Syncer
 }
 
 // New wires the use case. A nil syncer means reads are served from whatever is
 // already stored, for when something else keeps storage fresh.
-func New(editors EditorReader, revisions RevisionReader, syncer Syncer) *UseCase {
+func New(
+	editors EditorReader,
+	revisions RevisionReader,
+	corrections PaymentCorrectionReader,
+	syncer Syncer,
+) *UseCase {
 	if syncer == nil {
 		syncer = noSync{}
 	}
 
 	return &UseCase{
-		editors:   editors,
-		revisions: revisions,
-		syncer:    syncer,
+		editors:     editors,
+		revisions:   revisions,
+		corrections: corrections,
+		syncer:      syncer,
 	}
 }
 
@@ -176,12 +196,48 @@ func (u *UseCase) ReadReport(ctx context.Context, from, to time.Time) (Report, e
 		return Report{}, fmt.Errorf("earnings: sum by editor: %w", err)
 	}
 
-	report := Report{From: from, To: to, Editors: rows}
-	for _, r := range rows {
+	corrections, err := u.corrections.SumByEditor(ctx, from, to)
+	if err != nil {
+		return Report{}, fmt.Errorf("earnings: sum corrections by editor: %w", err)
+	}
+
+	editors := mergeEarnings(rows, corrections)
+
+	report := Report{From: from, To: to, Editors: editors}
+	for _, r := range editors {
 		report.Total += r.Total
 	}
 
 	return report, nil
+}
+
+// mergeEarnings folds correction totals into the per-editor edit totals. An
+// editor whose only entry in the period is a correction still gets a row. The
+// result is ordered by editor id.
+func mergeEarnings(revisions, corrections []entity.EditorEarnings) []entity.EditorEarnings {
+	at := make(map[int64]int, len(revisions))
+	merged := make([]entity.EditorEarnings, 0, len(revisions)+len(corrections))
+
+	for _, r := range revisions {
+		at[r.EditorID] = len(merged)
+		merged = append(merged, r)
+	}
+
+	for _, c := range corrections {
+		if i, ok := at[c.EditorID]; ok {
+			merged[i].Total += c.Total
+			continue
+		}
+
+		at[c.EditorID] = len(merged)
+		merged = append(merged, c)
+	}
+
+	slices.SortFunc(merged, func(a, b entity.EditorEarnings) int {
+		return cmp.Compare(a.EditorID, b.EditorID)
+	})
+
+	return merged
 }
 
 func (u *UseCase) payslip(ctx context.Context, editor entity.Editor, from, to time.Time, syncErr error) (Payslip, error) {
@@ -195,13 +251,23 @@ func (u *UseCase) payslip(ctx context.Context, editor entity.Editor, from, to ti
 		return Payslip{}, fmt.Errorf("earnings: list for editor %d: %w", editor.EditorID, err)
 	}
 
+	corrections, err := u.corrections.ListByEditor(ctx, editor.EditorID, from, to)
+	if err != nil {
+		return Payslip{}, fmt.Errorf("earnings: list corrections for editor %d: %w", editor.EditorID, err)
+	}
+
+	for _, c := range corrections {
+		total += c.Amount
+	}
+
 	return Payslip{
-		Editor:    editor,
-		From:      from,
-		To:        to,
-		Total:     total,
-		Revisions: revisions,
-		SyncErr:   syncErr,
+		Editor:             editor,
+		From:               from,
+		To:                 to,
+		Total:              total,
+		Revisions:          revisions,
+		PaymentCorrections: corrections,
+		SyncErr:            syncErr,
 	}, nil
 }
 

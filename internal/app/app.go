@@ -10,6 +10,7 @@ import (
 	"github.com/the-new-day/wiki-earnings/internal/mediawiki"
 	"github.com/the-new-day/wiki-earnings/internal/storage/postgres"
 	"github.com/the-new-day/wiki-earnings/internal/sync"
+	"github.com/the-new-day/wiki-earnings/internal/usecase/corrections"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/earnings"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/editors"
 	"github.com/the-new-day/wiki-earnings/internal/usecase/resync"
@@ -17,11 +18,12 @@ import (
 )
 
 type App struct {
-	Sync      *sync.Service
-	Earnings  *earnings.UseCase
-	Editors   *editors.UseCase
-	Revisions *revisions.UseCase
-	Resync    *resync.UseCase
+	Sync        *sync.Service
+	Earnings    *earnings.UseCase
+	Editors     *editors.UseCase
+	Revisions   *revisions.UseCase
+	Resync      *resync.UseCase
+	Corrections *corrections.UseCase
 
 	pool *pgxpool.Pool
 }
@@ -36,6 +38,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 
 	editorRepo := postgres.NewEditorRepository(pool)
 	revisionRepo := postgres.NewRevisionRepository(pool)
+	correctionRepo := postgres.NewPaymentCorrectionRepository(pool)
 	syncState := postgres.NewSyncStateRepository(pool)
 	deadLetter := postgres.NewDeadLetterRepository(pool)
 
@@ -60,12 +63,13 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	)
 
 	return &App{
-		Sync:      syncSvc,
-		Earnings:  earnings.New(editorRepo, revisionRepo, syncSvc),
-		Editors:   editors.New(editorRepo),
-		Revisions: revisions.New(editorRepo, revisionRepo),
-		Resync:    resync.New(syncState, deadLetter, syncSvc, cfg.Locales),
-		pool:      pool,
+		Sync:        syncSvc,
+		Earnings:    earnings.New(editorRepo, revisionRepo, correctionRepo, syncSvc),
+		Editors:     editors.New(editorRepo),
+		Revisions:   revisions.New(editorRepo, revisionRepo),
+		Resync:      resync.New(syncState, deadLetter, syncSvc, cfg.Locales),
+		Corrections: corrections.New(correctionRepo),
+		pool:        pool,
 	}, nil
 }
 

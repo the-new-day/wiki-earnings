@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/the-new-day/wiki-earnings/internal/storage"
@@ -75,6 +76,24 @@ type reply struct {
 
 	rootID      string
 	followupIDs []string
+	removed     bool
+}
+
+// alreadyGone reports whether err is Discord saying the message we were about to
+// touch does not exist. For a delete that is the desired end state, not a
+// failure -- a user who tidied up the bot's reply before its lifetime elapsed,
+// most often.
+func alreadyGone(err error) bool {
+	var rest *discordgo.RESTError
+	if !errors.As(err, &rest) {
+		return false
+	}
+
+	if rest.Response != nil && rest.Response.StatusCode == http.StatusNotFound {
+		return true
+	}
+
+	return rest.Message != nil && rest.Message.Code == discordgo.ErrCodeUnknownMessage
 }
 
 func (b *Bot) newReply(i *discordgo.InteractionCreate, ephemeral bool) *reply {
@@ -141,7 +160,7 @@ func (r *reply) trimFollowups(keep int) {
 	}
 
 	for _, id := range r.followupIDs[keep:] {
-		if err := r.bot.session.FollowupMessageDelete(r.interaction.Interaction, id); err != nil {
+		if err := r.bot.session.FollowupMessageDelete(r.interaction.Interaction, id); err != nil && !alreadyGone(err) {
 			log.Printf("discord: delete followup: %v", err)
 		}
 	}
@@ -152,17 +171,22 @@ func (r *reply) trimFollowups(keep int) {
 // remove deletes every message the reply is made of, including the
 // "thinking..." placeholder if nothing has replaced it yet.
 func (r *reply) remove() {
+	if r.removed {
+		return
+	}
+	r.removed = true
+
 	r.trimFollowups(0)
 
 	if r.ephemeral || r.rootID == "" {
-		if err := r.bot.session.InteractionResponseDelete(r.interaction.Interaction); err != nil {
+		if err := r.bot.session.InteractionResponseDelete(r.interaction.Interaction); err != nil && !alreadyGone(err) {
 			log.Printf("discord: delete reply: %v", err)
 		}
 
 		return
 	}
 
-	if err := r.bot.session.ChannelMessageDelete(r.interaction.ChannelID, r.rootID); err != nil {
+	if err := r.bot.session.ChannelMessageDelete(r.interaction.ChannelID, r.rootID); err != nil && !alreadyGone(err) {
 		log.Printf("discord: delete reply: %v", err)
 	}
 }

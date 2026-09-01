@@ -21,6 +21,14 @@ const dayLayout = "2006-01-02"
 
 var ErrWrongMonthLayout = errors.New("wrong month layout")
 
+// ErrCorrectionAmount is returned when /correction gets neither amount nor
+// target, or both at once: it needs exactly one.
+var ErrCorrectionAmount = errors.New("correction needs exactly one of amount or target")
+
+// ErrCorrectionNoop is returned when a correction would come to zero -- a target
+// the editor is already on, most often.
+var ErrCorrectionNoop = errors.New("correction would be zero")
+
 // commandFunc does the actual work for a command, off the 3-second interaction
 // ack deadline. Its result is pasted into the edited reply. update lets it
 // push an interim edit before returning - e.g. cached data shown instantly,
@@ -268,10 +276,15 @@ func formatEdits(nickname string, from time.Time, payslip earnings.Payslip, show
 			// example:
 			// * [2026-08-22|41] +5 000 💎: compensation for the lost edit
 			// The number after the date is the correction id, for /removecorrection.
+			// The description is dropped when it was left out.
 			fmt.Fprintf(&result,
-				"* [%s|%d] %+d 💎: %s\n",
-				corr.CreatedAt.Format(dayLayout), corr.CorrectionID, corr.Amount, corr.Description,
+				"* [%s|%d] %+d 💎",
+				corr.CreatedAt.Format(dayLayout), corr.CorrectionID, corr.Amount,
 			)
+			if corr.Description != "" {
+				fmt.Fprintf(&result, ": %s", corr.Description)
+			}
+			result.WriteByte('\n')
 		}
 	}
 
@@ -383,19 +396,42 @@ func (b *Bot) handleCorrection(
 	_ func(string),
 ) (string, error) {
 	nickname := data.GetOption("nickname").StringValue()
-	amount := data.GetOption("amount").IntValue()
-	description := data.GetOption("description").StringValue()
+	description := optionalString(data, "description")
 	createdBy := fmt.Sprintf("%s (%s)", i.Member.User.Username, i.Member.User.ID)
+
+	amountOpt := data.GetOption("amount")
+	targetOpt := data.GetOption("target")
+	if (amountOpt == nil) == (targetOpt == nil) {
+		return "", ErrCorrectionAmount
+	}
+
+	from, to, err := monthRange(optionalString(data, "month"))
+	if err != nil {
+		return "", err
+	}
 
 	// No month: book it now. A month: book it at that month's first instant, so
 	// the report for that month picks it up.
 	appliesAt := time.Now().UTC()
-	if raw := optionalString(data, "month"); raw != "" {
-		from, _, err := monthRange(raw)
+	if optionalString(data, "month") != "" {
+		appliesAt = from
+	}
+
+	amount := int64(0)
+	if amountOpt != nil {
+		amount = amountOpt.IntValue()
+	} else {
+		// target: add whatever brings the month's earnings (edits plus the
+		// corrections already booked) up to the figure asked for.
+		payslip, err := b.earnings.ForNickname(ctx, nickname, from, to)
 		if err != nil {
 			return "", err
 		}
-		appliesAt = from
+		amount = targetOpt.IntValue() - payslip.Total
+	}
+
+	if amount == 0 {
+		return "", ErrCorrectionNoop
 	}
 
 	corr, err := b.corrections.AddPaymentCorrection(ctx, nickname, description, amount, createdBy, appliesAt)
@@ -403,10 +439,15 @@ func (b *Bot) handleCorrection(
 		return "", err
 	}
 
-	return fmt.Sprintf(
-		"Correction #%d of %d 💎 added for %s (%s): %s",
-		corr.CorrectionID, corr.Amount, nickname, monthToText(corr.AppliesAt), corr.Description,
-	), nil
+	msg := fmt.Sprintf(
+		"Correction #%d of %+d 💎 added for %s (%s)",
+		corr.CorrectionID, corr.Amount, nickname, monthToText(corr.AppliesAt),
+	)
+	if corr.Description != "" {
+		msg += ": " + corr.Description
+	}
+
+	return msg, nil
 }
 
 func (b *Bot) handleRemoveCorrection(

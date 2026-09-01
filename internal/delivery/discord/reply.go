@@ -57,6 +57,10 @@ func errorText(err error) (text string, hasExplanation bool) {
 		return "That nickname is too long.", true
 	case errors.Is(err, ErrWrongMonthLayout):
 		return "Wrong month layout. Use YYYY-MM, for example 2026-08.", true
+	case errors.Is(err, ErrCorrectionAmount):
+		return "Give either amount or target, not both.", true
+	case errors.Is(err, ErrCorrectionNoop):
+		return "That correction would be zero. Nothing added.", true
 	default:
 		return "Something went wrong. Please let the nearest nerd know.", false
 	}

@@ -286,7 +286,7 @@ func registerCommands() {
 		},
 		{
 			Name:        "correction",
-			Description: "Add a payment correction for an editor (amount may be negative)",
+			Description: "Add a payment correction for an editor. Give amount or target, not both",
 			Options: []*discordgo.ApplicationCommandOption{
 				{
 					Type:        discordgo.ApplicationCommandOptionString,
@@ -298,13 +298,16 @@ func registerCommands() {
 					Type:        discordgo.ApplicationCommandOptionInteger,
 					Name:        "amount",
 					Description: "Crystals to add, or subtract if negative",
-					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionInteger,
+					Name:        "target",
+					Description: "Add whatever it takes to bring the month's earnings to this figure",
 				},
 				{
 					Type:        discordgo.ApplicationCommandOptionString,
 					Name:        "description",
-					Description: "Why the correction is made",
-					Required:    true,
+					Description: "Why the correction is made. May be left out",
 				},
 				{
 					Type:        discordgo.ApplicationCommandOptionString,

@@ -138,8 +138,8 @@ func (b *Bot) handleMessageCreate(s *discordgo.Session, m *discordgo.MessageCrea
 	}
 
 	// TODO: remove
-	if m.Author.Username == "new.day" {
-		b.sendTextMessage(m.ChannelID, "noob :arrow_up:")
+	if m.Author.Username == "brem9i" {
+		b.sendTextMessage(m.ChannelID, "Noob :arrow_up:")
 	}
 
 	log.Printf("discord: [%s] %s: %s", m.ChannelID, m.Author.Username, m.Content)

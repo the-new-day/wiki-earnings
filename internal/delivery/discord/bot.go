@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"strings"
 	"time"
 
@@ -138,7 +139,7 @@ func (b *Bot) handleMessageCreate(s *discordgo.Session, m *discordgo.MessageCrea
 	}
 
 	// TODO: remove
-	if m.Author.Username == "brem9i" {
+	if m.Author.Username == "brem9i" && rand.IntN(100) < 20 {
 		b.sendTextMessage(m.ChannelID, "Noob :arrow_up:")
 	}
 
